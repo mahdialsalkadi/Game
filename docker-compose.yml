@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  boardgame-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: universal-boardgame-studio
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "1999:1999"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - WS_PORT=1999
+      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:1999/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
