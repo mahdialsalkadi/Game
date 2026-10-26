@@ -3,6 +3,17 @@ import { google } from "@ai-sdk/google";
 import { GeneratedSessionPackSchema } from "./schema";
 import type { GeneratedSessionPack, GameArchetype } from "./schema";
 import type { PlayerBehavioralDNA } from "./behavioralDNA";
+import { AUTHENTIC_LUDO_PACK } from "./ludoEngine";
+import {
+  AUTHENTIC_MONOPOLY_PACK,
+  ORIGINAL_CLASSIC_MONOPOLY_PACK,
+  RIYADH_VIP_MONOPOLY_PACK
+} from "./monopolyEngine";
+import {
+  CONNECT_FOUR_PACK,
+  CHECKERS_PACK,
+  BINGO_PACK
+} from "./classicGamePacks";
 
 /**
  * 1. الأمر التوجيهي للنظام (System Prompt)
@@ -179,10 +190,10 @@ export const FAMOUS_GAME_PRESETS: FamousGamePresetMeta[] = [
   {
     id: "monopoly",
     key: "MONOPOLY_CLASSIC",
-    titleAr: "مونوبولي كلاسيك",
-    taglineAr: "عقارات وإيجارات وشراء أحياء الرياض الفاخرة",
+    titleAr: "مونوبولي كلاسيك الأصلية",
+    taglineAr: "بوردووك وإلينوي وشراء العقارات الكلاسيكية بالدولار",
     icon: "Building2",
-    badge: "شراء وإيجارات",
+    badge: "شراء وإيجارات 🎩",
     turnMechanism: "DICE_AND_MOVE",
     ownershipSystem: "BUY_AND_RENT",
     winCondition: "MOST_COINS"
@@ -241,6 +252,17 @@ export const FAMOUS_GAME_PRESETS: FamousGamePresetMeta[] = [
     turnMechanism: "DICE_AND_MOVE",
     ownershipSystem: "BUY_AND_RENT",
     winCondition: "MOST_COINS"
+  },
+  {
+    id: "ludo",
+    key: "LUDO_CLASSIC",
+    titleAr: "لودو المجلس (Ludo Star)",
+    taglineAr: "مسارات صليب كلاسيكية ونرد 6 وأكل قطع ونجوم أمان",
+    icon: "Dices",
+    badge: "لودو كلاسيك",
+    turnMechanism: "DICE_AND_MOVE",
+    ownershipSystem: "NONE",
+    winCondition: "FIRST_TO_FINISH"
   }
 ];
 
@@ -248,435 +270,10 @@ export const FAMOUS_GAME_PRESETS: FamousGamePresetMeta[] = [
  * 5. مكتبة الحزم والقوالب الجاهزة بالكامل (PRESET_PACKS)
  */
 export const PRESET_PACKS: Record<string, GeneratedSessionPack> = {
-  "MONOPOLY_CLASSIC": {
-    "themeTitle": "مونوبولي كلاسيك (عقارات الرياض)",
-    "visualStyle": "CARTOON_OFFICE",
-    "archetype": "PARTY_ECONOMY",
-    "winCondition": "MOST_COINS",
-    "currencyName": "ريال",
-    "narratorIntro": "مرحباً بكم في احتكار العقارات! اشترِ الأراضي، شيد المباني، واجمع الإيجارات من أصدقائك حتى الإفلاس!",
-    "rulesConfig": {
-      "turnMechanism": "DICE_AND_MOVE",
-      "cardVisibility": "SECRET_PHONE_ONLY",
-      "ownershipSystem": "BUY_AND_RENT"
-    },
-    "tiles": [
-      {
-        "index": 0,
-        "tileType": "START",
-        "name": "نقطة البداية (المرور)",
-        "description": "استلم 100 ريال مكافأة المرور بالبداية.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 100
-        }
-      },
-      {
-        "index": 1,
-        "tileType": "RESOURCE",
-        "name": "حي البطحاء",
-        "description": "عقار تجاري عريق.",
-        "price": 100,
-        "rent": 25,
-        "ownerId": null
-      },
-      {
-        "index": 2,
-        "tileType": "SECRET_CARD",
-        "name": "صندوق الحظ 🎁",
-        "description": "اسحب بطاقة فرصة عقارية سرية."
-      },
-      {
-        "index": 3,
-        "tileType": "RESOURCE",
-        "name": "حي الملز",
-        "description": "عقار سكني وتجاري حيوي.",
-        "price": 120,
-        "rent": 30,
-        "ownerId": null
-      },
-      {
-        "index": 4,
-        "tileType": "HAZARD",
-        "name": "فاتورة الكهرباء والبلدية",
-        "description": "رسوم خدمات حكومية مفاجئة!",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": -40
-        }
-      },
-      {
-        "index": 5,
-        "tileType": "RESOURCE",
-        "name": "محطة قطار سار 🚆",
-        "description": "محطة قطار استراتيجية للنقل.",
-        "price": 180,
-        "rent": 45,
-        "ownerId": null
-      },
-      {
-        "index": 6,
-        "tileType": "RESOURCE",
-        "name": "شارع التحلية",
-        "description": "شارع المقاهي والمطاعم الفاخرة.",
-        "price": 200,
-        "rent": 50,
-        "ownerId": null
-      },
-      {
-        "index": 7,
-        "tileType": "GLOBAL_VOTE",
-        "name": "محكمة النزاعات التجارية",
-        "description": "تصويت على تغريم المستثمر الأكثر جشعاً!"
-      },
-      {
-        "index": 8,
-        "tileType": "RESOURCE",
-        "name": "طريق الملك فهد",
-        "description": "شريان العاصمة المالي والأبراج.",
-        "price": 240,
-        "rent": 60,
-        "ownerId": null
-      },
-      {
-        "index": 9,
-        "tileType": "RESOURCE",
-        "name": "حي العليا",
-        "description": "عقارات المركز المالي الراقي.",
-        "price": 260,
-        "rent": 65,
-        "ownerId": null
-      },
-      {
-        "index": 10,
-        "tileType": "RESOURCE",
-        "name": "محطة مترو العليا 🚇",
-        "description": "نقطة تقاطع المترو الرئيسية.",
-        "price": 180,
-        "rent": 45,
-        "ownerId": null
-      },
-      {
-        "index": 11,
-        "tileType": "DRAMA_EVENT",
-        "name": "طفرة عقارية 📈",
-        "description": "ارتفاع مفاجئ في تقييم السوق العقاري!"
-      },
-      {
-        "index": 12,
-        "tileType": "RESOURCE",
-        "name": "حي النخيل",
-        "description": "حي راقٍ وقصور فخمة.",
-        "price": 300,
-        "rent": 75,
-        "ownerId": null
-      },
-      {
-        "index": 13,
-        "tileType": "HAZARD",
-        "name": "ضريبة التصرفات العقارية",
-        "description": "ضريبة حكومية على الصفقات العقارية!",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": -50
-        }
-      },
-      {
-        "index": 14,
-        "tileType": "RESOURCE",
-        "name": "حي الملقا",
-        "description": "شمال الرياض الذهبي والطلب العالي.",
-        "price": 320,
-        "rent": 80,
-        "ownerId": null
-      },
-      {
-        "index": 15,
-        "tileType": "GLOBAL_VOTE",
-        "name": "مزاد علني 🏷️",
-        "description": "تصويت على فرض غرامة احتكار وتصريف أصول!"
-      },
-      {
-        "index": 16,
-        "tileType": "RESOURCE",
-        "name": "حي حطين",
-        "description": "منطقة البوليفارد والمشاريع الكبرى.",
-        "price": 340,
-        "rent": 85,
-        "ownerId": null
-      },
-      {
-        "index": 17,
-        "tileType": "DRAMA_EVENT",
-        "name": "أرباح صناديق الريت 💰",
-        "description": "توزيع أرباح استثمارية للملاك!"
-      },
-      {
-        "index": 18,
-        "tileType": "RESOURCE",
-        "name": "برج المملكة والفيصلية 🏙️",
-        "description": "جوهرة التاج العقاري وأعلى إيجار.",
-        "price": 380,
-        "rent": 95,
-        "ownerId": null
-      },
-      {
-        "index": 19,
-        "tileType": "SECRET_CARD",
-        "name": "خزينة الفرص الذهبية",
-        "description": "فرصة أخيرة لسحب صك عقاري نادر!"
-      }
-    ],
-    "cardsDeck": [
-      {
-        "id": "mono_01",
-        "title": "تفتيش عقاري سري",
-        "category": "SECRET_HAND",
-        "flavorText": "فرضت غرامة صيانة عاجلة على أحد الخصوم!",
-        "effects": [
-          {
-            "actionType": "STEAL_COINS",
-            "targetType": "CHOSEN_PLAYER",
-            "value": 50
-          }
-        ]
-      },
-      {
-        "id": "mono_02",
-        "title": "تبادل صكوك",
-        "category": "SECRET_HAND",
-        "flavorText": "أعدت ترسيم الحدود وبدلت موقعك على اللوحة!",
-        "effects": [
-          {
-            "actionType": "SWAP_POSITIONS",
-            "targetType": "CHOSEN_PLAYER",
-            "value": 0
-          }
-        ]
-      },
-      {
-        "id": "mono_03",
-        "title": "تجميد رخصة البناء",
-        "category": "SECRET_HAND",
-        "flavorText": "أوقفت مشاريع خصمك وتخطي دوره القادم!",
-        "effects": [
-          {
-            "actionType": "SKIP_TURN",
-            "targetType": "CHOSEN_PLAYER",
-            "value": 1
-          }
-        ]
-      },
-      {
-        "id": "mono_04",
-        "title": "تأمين شامل ضد الكوارث",
-        "category": "SECRET_HAND",
-        "flavorText": "بوليصة تأمين تصد عنك الإيجارات والغرامات!",
-        "effects": [
-          {
-            "actionType": "GRANT_SHIELD",
-            "targetType": "SELF",
-            "value": 1
-          }
-        ]
-      },
-      {
-        "id": "mono_05",
-        "title": "طائرة رجال الأعمال",
-        "category": "SECRET_HAND",
-        "flavorText": "قفزة سريعة للأمام نحو العقارات الأكثر ربحية!",
-        "effects": [
-          {
-            "actionType": "MOVE_STEPS",
-            "targetType": "SELF",
-            "value": 4
-          }
-        ]
-      },
-      {
-        "id": "mono_06",
-        "title": "ضريبة الأراضي البيضاء",
-        "category": "SECRET_HAND",
-        "flavorText": "فرضت رسوماً باهظة على أغنى مستثمر على الطاولة!",
-        "effects": [
-          {
-            "actionType": "TAX_PERCENTAGE",
-            "targetType": "RICHEST_PLAYER",
-            "value": 25
-          }
-        ]
-      },
-      {
-        "id": "mono_07",
-        "title": "ركود اقتصادي",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "انخفاض مؤقت في السيولة يخسر بسببه جميع المنافسين مبالغ!",
-        "effects": [
-          {
-            "actionType": "MODIFY_COINS",
-            "targetType": "ALL_OTHERS",
-            "value": -30
-          }
-        ]
-      },
-      {
-        "id": "mono_08",
-        "title": "منحة دعم صغار المستثمرين",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "صندوق الدعم العقاري يمنح سيولة لأفقر لاعب!",
-        "effects": [
-          {
-            "actionType": "MODIFY_COINS",
-            "targetType": "SELF",
-            "value": -30
-          },
-          {
-            "actionType": "MODIFY_COINS",
-            "targetType": "POOREST_PLAYER",
-            "value": 45
-          }
-        ]
-      },
-      {
-        "id": "mono_09",
-        "title": "سقوط الهامور",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "خسارة فادحة في البورصة تلحق بأغنى متسابق!",
-        "effects": [
-          {
-            "actionType": "TAX_PERCENTAGE",
-            "targetType": "RICHEST_PLAYER",
-            "value": 20
-          }
-        ]
-      },
-      {
-        "id": "mono_10",
-        "title": "نزع ملكية للمنفعة العامة",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "تعويض حكومي سخي يذهب لأحد اللاعبين عشوائياً!",
-        "effects": [
-          {
-            "actionType": "MODIFY_COINS",
-            "targetType": "RANDOM_OTHER",
-            "value": 75
-          }
-        ]
-      },
-      {
-        "id": "mono_11",
-        "title": "مخالفة مرورية فادحة",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "تراجع إجباري لسيارة لاعب عشوائي للخلف!",
-        "effects": [
-          {
-            "actionType": "MOVE_STEPS",
-            "targetType": "RANDOM_OTHER",
-            "value": -3
-          }
-        ]
-      },
-      {
-        "id": "mono_12",
-        "title": "مبادرة الإسكان الاجتماعي",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "ضريبة على الثري ودرع حماية لصاحب الرصيد الأقل!",
-        "effects": [
-          {
-            "actionType": "TAX_PERCENTAGE",
-            "targetType": "RICHEST_PLAYER",
-            "value": 15
-          },
-          {
-            "actionType": "GRANT_SHIELD",
-            "targetType": "POOREST_PLAYER",
-            "value": 1
-          }
-        ]
-      },
-      {
-        "id": "mono_13",
-        "title": "توزيع أرباح أرامكو",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "عائد استثماري كبير يملأ خزانتك بالريالات!",
-        "effects": [
-          {
-            "actionType": "MODIFY_COINS",
-            "targetType": "SELF",
-            "value": 80
-          }
-        ]
-      },
-      {
-        "id": "mono_14",
-        "title": "ضريبة القيمة المضافة",
-        "category": "PUBLIC_DRAMA",
-        "flavorText": "تسوية ضريبية تقتطع نسبة من جميع المتنافسين!",
-        "effects": [
-          {
-            "actionType": "TAX_PERCENTAGE",
-            "targetType": "ALL_OTHERS",
-            "value": 15
-          }
-        ]
-      },
-      {
-        "id": "mono_15",
-        "title": "محكمة مكافحة الاحتكار",
-        "category": "VOTE_CARD",
-        "flavorText": "صوتوا: من هو المستثمر الأكثر جشعاً الذي يستحق غرامة الاحتكار؟",
-        "effects": [
-          {
-            "actionType": "VOTE_PENALTY",
-            "targetType": "ALL_OTHERS",
-            "value": -60
-          }
-        ]
-      },
-      {
-        "id": "mono_16",
-        "title": "تحقيق التستر التجاري",
-        "category": "VOTE_CARD",
-        "flavorText": "صوتوا: من الذي يدير صفقات مشبوهة خلف الكواليس؟",
-        "effects": [
-          {
-            "actionType": "VOTE_PENALTY",
-            "targetType": "ALL_OTHERS",
-            "value": -70
-          }
-        ]
-      },
-      {
-        "id": "mono_17",
-        "title": "مزاد الإفلاس القسري",
-        "category": "VOTE_CARD",
-        "flavorText": "صوتوا: من هو اللاعب المتبجح الذي حان وقت كسر شوكته؟",
-        "effects": [
-          {
-            "actionType": "VOTE_PENALTY",
-            "targetType": "ALL_OTHERS",
-            "value": -65
-          }
-        ]
-      },
-      {
-        "id": "mono_18",
-        "title": "أوسكار الجشع المالي",
-        "category": "VOTE_CARD",
-        "flavorText": "صوتوا: من يرفض دفع الإيجارات ويستحق مصادرة أمواله؟",
-        "effects": [
-          {
-            "actionType": "VOTE_PENALTY",
-            "targetType": "ALL_OTHERS",
-            "value": -80
-          }
-        ]
-      }
-    ]
-  },
+  "LUDO_CLASSIC": AUTHENTIC_LUDO_PACK,
+  "MONOPOLY_CLASSIC": ORIGINAL_CLASSIC_MONOPOLY_PACK,
+  "RIYADH_VIP": RIYADH_VIP_MONOPOLY_PACK,
+
   "WORLD_CONQUEST_RISK": {
     "themeTitle": "غزو العالم (حروب الأقاليم)",
     "visualStyle": "ANCIENT_ARABIA",
@@ -1996,180 +1593,877 @@ export const PRESET_PACKS: Record<string, GeneratedSessionPack> = {
     },
     "tiles": [
       {
-        "index": 0,
-        "tileType": "START",
-        "name": "بوابة البرج السحري",
-        "description": "انطلاق السباق +100 خطوة سحرية.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 100
-        }
+            "index": 0,
+            "tileType": "START",
+            "name": "بوابة الانطلاق (المربع 1)",
+            "description": "بداية الرحلة والسباق نحو القمة! +100 خطوة سحرية.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 100
+            }
       },
       {
-        "index": 1,
-        "tileType": "RESOURCE",
-        "name": "بلورة السرعة",
-        "description": "طاقة سحرية تدفعك للأمام.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 60
-        }
+            "index": 1,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #2",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
       },
       {
-        "index": 2,
-        "tileType": "SECRET_CARD",
-        "name": "لفافة الطيران",
-        "description": "تعويذة سرية تدعم مسيرتك."
+            "index": 2,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #3",
+            "description": "تعويذة سرية تدعم مسيرتك."
       },
       {
-        "index": 3,
-        "tileType": "RESOURCE",
-        "name": "سلم الذهب السريع 🪜",
-        "description": "اصعد فوراً إلى المربع #10!",
-        "jumpToIndex": 10
+            "index": 3,
+            "tileType": "RESOURCE",
+            "name": "سلم الخيزران 🪜 (المربع 4)",
+            "description": "اصعد فوراً إلى المربع #14!",
+            "jumpToIndex": 13
       },
       {
-        "index": 4,
-        "tileType": "HAZARD",
-        "name": "مستنقع الوحل",
-        "description": "طين يعيق تقدمك!",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": -35
-        }
+            "index": 4,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #5",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
       },
       {
-        "index": 5,
-        "tileType": "RESOURCE",
-        "name": "جرعة الحيوية",
-        "description": "انتعاش واستعادة طاقة.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 70
-        }
+            "index": 5,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #6",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
       },
       {
-        "index": 6,
-        "tileType": "DRAMA_EVENT",
-        "name": "رياح عاتية 🌪️",
-        "description": "رياح تقلب توازن المتسابقين!"
+            "index": 6,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #7",
+            "description": "بطاقة حظ غامضة تكافئك."
       },
       {
-        "index": 7,
-        "tileType": "RESOURCE",
-        "name": "سلم النجوم الصاعد 🪜",
-        "description": "قفزة سحرية صاعدة إلى المربع #14!",
-        "jumpToIndex": 14
+            "index": 7,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #8",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
       },
       {
-        "index": 8,
-        "tileType": "GLOBAL_VOTE",
-        "name": "محاكمة عرقلة العدائين",
-        "description": "تصويت على تغريم من يضع العوائق في طريق البقية!"
+            "index": 8,
+            "tileType": "RESOURCE",
+            "name": "سلم الحبل المتين 🪜 (المربع 9)",
+            "description": "اصعد فوراً إلى المربع #31!",
+            "jumpToIndex": 30
       },
       {
-        "index": 9,
-        "tileType": "RESOURCE",
-        "name": "حذاء الريح",
-        "description": "خطوات مضاعفة.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 65
-        }
+            "index": 9,
+            "tileType": "DRAMA_EVENT",
+            "name": "زلزال الدرجات #10",
+            "description": "اهتزاز في درجات السلم البرجي!"
       },
       {
-        "index": 10,
-        "tileType": "RESOURCE",
-        "name": "شرفة البرج الأوسط",
-        "description": "إطلالة ساحرة ومكسب طاقة.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 75
-        }
+            "index": 10,
+            "tileType": "RESOURCE",
+            "name": "واحة النسيم #11",
+            "description": "راحة واستعادة طاقة وانتعاش.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 50
+            }
       },
       {
-        "index": 11,
-        "tileType": "DRAMA_EVENT",
-        "name": "زلزال الدرجات الحجرية",
-        "description": "اهتزاز يهز مسار المتسابقين!"
+            "index": 11,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #12",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
       },
       {
-        "index": 12,
-        "tileType": "SECRET_CARD",
-        "name": "تميمة الحظ النادرة",
-        "description": "حماية سحرية ضد الانزلاق."
+            "index": 12,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #13",
+            "description": "تعويذة سرية تدعم مسيرتك."
       },
       {
-        "index": 13,
-        "tileType": "HAZARD",
-        "name": "ثعبان الرمال الغادر 🐍",
-        "description": "لدغة ثعبان تسقطك للمربع #5!",
-        "jumpToIndex": 5,
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": -30
-        }
+            "index": 13,
+            "tileType": "HAZARD",
+            "name": "مستنقع الوحل #14",
+            "description": "طين لزج يعيق حركتك.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -30
+            }
       },
       {
-        "index": 14,
-        "tileType": "RESOURCE",
-        "name": "بوابة الأثير العالية",
-        "description": "مكسب نقاط خطوات ثمينة.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 80
-        }
+            "index": 14,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #15",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
       },
       {
-        "index": 15,
-        "tileType": "GLOBAL_VOTE",
-        "name": "استفتاء التدافع على القمة",
-        "description": "الجمهور يحكم على من دفع خصمه في المنحدر!"
+            "index": 15,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #16",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
       },
       {
-        "index": 16,
-        "tileType": "DRAMA_EVENT",
-        "name": "شهاب مضيء 🌠",
-        "description": "ضوء يفتح مساراً مختصراً!"
+            "index": 16,
+            "tileType": "HAZARD",
+            "name": "ثعبان الحديقة 🐍 (المربع 17)",
+            "description": "انزلق للخلف إلى المربع #7!",
+            "jumpToIndex": 6,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
       },
       {
-        "index": 17,
-        "tileType": "HAZARD",
-        "name": "الثعبان العملاق الكاسر 🐍",
-        "description": "سقوط مروع من أعلى البرج إلى المربع #8!",
-        "jumpToIndex": 8,
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": -50
-        }
+            "index": 17,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #18",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
       },
       {
-        "index": 18,
-        "tileType": "RESOURCE",
-        "name": "عتبة المجد والعرش",
-        "description": "خطوة واحدة تفصلك عن التتويج الأسطوري.",
-        "defaultEffect": {
-          "actionType": "MODIFY_COINS",
-          "targetType": "SELF",
-          "value": 90
-        }
+            "index": 18,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #19",
+            "description": "كنز خفي ينتظر من يكتشفه."
       },
       {
-        "index": 19,
-        "tileType": "SECRET_CARD",
-        "name": "تاج القمة الذهبي 👑",
-        "description": "خط النهاية وختام السباق!"
+            "index": 19,
+            "tileType": "RESOURCE",
+            "name": "سلم القلعة العتيق 🪜 (المربع 20)",
+            "description": "اصعد فوراً إلى المربع #38!",
+            "jumpToIndex": 37
+      },
+      {
+            "index": 20,
+            "tileType": "RESOURCE",
+            "name": "واحة النسيم #21",
+            "description": "راحة واستعادة طاقة وانتعاش.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 50
+            }
+      },
+      {
+            "index": 21,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #22",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
+      },
+      {
+            "index": 22,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #23",
+            "description": "تعويذة سرية تدعم مسيرتك."
+      },
+      {
+            "index": 23,
+            "tileType": "HAZARD",
+            "name": "مستنقع الوحل #24",
+            "description": "طين لزج يعيق حركتك.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -30
+            }
+      },
+      {
+            "index": 24,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #25",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
+      },
+      {
+            "index": 25,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #26",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 26,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #27",
+            "description": "بطاقة حظ غامضة تكافئك."
+      },
+      {
+            "index": 27,
+            "tileType": "RESOURCE",
+            "name": "سلم النجوم العملاق 🪜 (المربع 28)",
+            "description": "قفزة أسطورية صاعدة إلى المربع #84!",
+            "jumpToIndex": 83
+      },
+      {
+            "index": 28,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #29",
+            "description": "كنز خفي ينتظر من يكتشفه."
+      },
+      {
+            "index": 29,
+            "tileType": "DRAMA_EVENT",
+            "name": "زلزال الدرجات #30",
+            "description": "اهتزاز في درجات السلم البرجي!"
+      },
+      {
+            "index": 30,
+            "tileType": "RESOURCE",
+            "name": "واحة النسيم #31",
+            "description": "راحة واستعادة طاقة وانتعاش.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 50
+            }
+      },
+      {
+            "index": 31,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #32",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
+      },
+      {
+            "index": 32,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #33",
+            "description": "تعويذة سرية تدعم مسيرتك."
+      },
+      {
+            "index": 33,
+            "tileType": "HAZARD",
+            "name": "مستنقع الوحل #34",
+            "description": "طين لزج يعيق حركتك.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -30
+            }
+      },
+      {
+            "index": 34,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #35",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
+      },
+      {
+            "index": 35,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #36",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 36,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #37",
+            "description": "بطاقة حظ غامضة تكافئك."
+      },
+      {
+            "index": 37,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #38",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
+      },
+      {
+            "index": 38,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #39",
+            "description": "كنز خفي ينتظر من يكتشفه."
+      },
+      {
+            "index": 39,
+            "tileType": "RESOURCE",
+            "name": "سلم الجبل الوعر 🪜 (المربع 40)",
+            "description": "اصعد فوراً إلى المربع #59!",
+            "jumpToIndex": 58
+      },
+      {
+            "index": 40,
+            "tileType": "RESOURCE",
+            "name": "واحة النسيم #41",
+            "description": "راحة واستعادة طاقة وانتعاش.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 50
+            }
+      },
+      {
+            "index": 41,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #42",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
+      },
+      {
+            "index": 42,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #43",
+            "description": "تعويذة سرية تدعم مسيرتك."
+      },
+      {
+            "index": 43,
+            "tileType": "HAZARD",
+            "name": "مستنقع الوحل #44",
+            "description": "طين لزج يعيق حركتك.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -30
+            }
+      },
+      {
+            "index": 44,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #45",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
+      },
+      {
+            "index": 45,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #46",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 46,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #47",
+            "description": "بطاقة حظ غامضة تكافئك."
+      },
+      {
+            "index": 47,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #48",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
+      },
+      {
+            "index": 48,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #49",
+            "description": "كنز خفي ينتظر من يكتشفه."
+      },
+      {
+            "index": 49,
+            "tileType": "DRAMA_EVENT",
+            "name": "زلزال الدرجات #50",
+            "description": "اهتزاز في درجات السلم البرجي!"
+      },
+      {
+            "index": 50,
+            "tileType": "RESOURCE",
+            "name": "سلم البرج الرخامي 🪜 (المربع 51)",
+            "description": "اصعد فوراً إلى المربع #67!",
+            "jumpToIndex": 66
+      },
+      {
+            "index": 51,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #52",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
+      },
+      {
+            "index": 52,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #53",
+            "description": "تعويذة سرية تدعم مسيرتك."
+      },
+      {
+            "index": 53,
+            "tileType": "HAZARD",
+            "name": "ثعبان الصخور الملتوي 🐍 (المربع 54)",
+            "description": "انزلق للخلف إلى المربع #34!",
+            "jumpToIndex": 33,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
+      },
+      {
+            "index": 54,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #55",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
+      },
+      {
+            "index": 55,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #56",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 56,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #57",
+            "description": "بطاقة حظ غامضة تكافئك."
+      },
+      {
+            "index": 57,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #58",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
+      },
+      {
+            "index": 58,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #59",
+            "description": "كنز خفي ينتظر من يكتشفه."
+      },
+      {
+            "index": 59,
+            "tileType": "DRAMA_EVENT",
+            "name": "زلزال الدرجات #60",
+            "description": "اهتزاز في درجات السلم البرجي!"
+      },
+      {
+            "index": 60,
+            "tileType": "RESOURCE",
+            "name": "واحة النسيم #61",
+            "description": "راحة واستعادة طاقة وانتعاش.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 50
+            }
+      },
+      {
+            "index": 61,
+            "tileType": "HAZARD",
+            "name": "أفعى الوادي السحيق 🐍 (المربع 62)",
+            "description": "سقوط حاد إلى المربع #19!",
+            "jumpToIndex": 18,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
+      },
+      {
+            "index": 62,
+            "tileType": "RESOURCE",
+            "name": "سلم السحاب الفضي 🪜 (المربع 63)",
+            "description": "اصعد فوراً إلى المربع #81!",
+            "jumpToIndex": 80
+      },
+      {
+            "index": 63,
+            "tileType": "HAZARD",
+            "name": "ثعبان المستنقع 🐍 (المربع 64)",
+            "description": "انزلق للخلف إلى المربع #60!",
+            "jumpToIndex": 59,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
+      },
+      {
+            "index": 64,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #65",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
+      },
+      {
+            "index": 65,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #66",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 66,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #67",
+            "description": "بطاقة حظ غامضة تكافئك."
+      },
+      {
+            "index": 67,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #68",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
+      },
+      {
+            "index": 68,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #69",
+            "description": "كنز خفي ينتظر من يكتشفه."
+      },
+      {
+            "index": 69,
+            "tileType": "DRAMA_EVENT",
+            "name": "زلزال الدرجات #70",
+            "description": "اهتزاز في درجات السلم البرجي!"
+      },
+      {
+            "index": 70,
+            "tileType": "RESOURCE",
+            "name": "سلم قمة المجد 🪜 (المربع 71)",
+            "description": "اصعد فوراً إلى المربع #91!",
+            "jumpToIndex": 90
+      },
+      {
+            "index": 71,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #72",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
+      },
+      {
+            "index": 72,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #73",
+            "description": "تعويذة سرية تدعم مسيرتك."
+      },
+      {
+            "index": 73,
+            "tileType": "HAZARD",
+            "name": "مستنقع الوحل #74",
+            "description": "طين لزج يعيق حركتك.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -30
+            }
+      },
+      {
+            "index": 74,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #75",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
+      },
+      {
+            "index": 75,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #76",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 76,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #77",
+            "description": "بطاقة حظ غامضة تكافئك."
+      },
+      {
+            "index": 77,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #78",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
+      },
+      {
+            "index": 78,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #79",
+            "description": "كنز خفي ينتظر من يكتشفه."
+      },
+      {
+            "index": 79,
+            "tileType": "DRAMA_EVENT",
+            "name": "زلزال الدرجات #80",
+            "description": "اهتزاز في درجات السلم البرجي!"
+      },
+      {
+            "index": 80,
+            "tileType": "RESOURCE",
+            "name": "واحة النسيم #81",
+            "description": "راحة واستعادة طاقة وانتعاش.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 50
+            }
+      },
+      {
+            "index": 81,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #82",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
+      },
+      {
+            "index": 82,
+            "tileType": "SECRET_CARD",
+            "name": "لفافة الطيران #83",
+            "description": "تعويذة سرية تدعم مسيرتك."
+      },
+      {
+            "index": 83,
+            "tileType": "HAZARD",
+            "name": "مستنقع الوحل #84",
+            "description": "طين لزج يعيق حركتك.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -30
+            }
+      },
+      {
+            "index": 84,
+            "tileType": "RESOURCE",
+            "name": "جرعة الحيوية #85",
+            "description": "انتعاش ومكسب نقاط ثمين.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 70
+            }
+      },
+      {
+            "index": 85,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #86",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 86,
+            "tileType": "HAZARD",
+            "name": "ثعبان الصحراء الغادر 🐍 (المربع 87)",
+            "description": "انهيار مروع إلى المربع #24!",
+            "jumpToIndex": 23,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
+      },
+      {
+            "index": 87,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #88",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
+      },
+      {
+            "index": 88,
+            "tileType": "SECRET_CARD",
+            "name": "كهف الأسرار #89",
+            "description": "كنز خفي ينتظر من يكتشفه."
+      },
+      {
+            "index": 89,
+            "tileType": "DRAMA_EVENT",
+            "name": "زلزال الدرجات #90",
+            "description": "اهتزاز في درجات السلم البرجي!"
+      },
+      {
+            "index": 90,
+            "tileType": "RESOURCE",
+            "name": "واحة النسيم #91",
+            "description": "راحة واستعادة طاقة وانتعاش.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 50
+            }
+      },
+      {
+            "index": 91,
+            "tileType": "RESOURCE",
+            "name": "بلورة السرعة #92",
+            "description": "طاقة سحرية تدفعك للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 60
+            }
+      },
+      {
+            "index": 92,
+            "tileType": "HAZARD",
+            "name": "أفعى الرياح الجبلية 🐍 (المربع 93)",
+            "description": "انزلق للخلف إلى المربع #73!",
+            "jumpToIndex": 72,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
+      },
+      {
+            "index": 93,
+            "tileType": "HAZARD",
+            "name": "مستنقع الوحل #94",
+            "description": "طين لزج يعيق حركتك.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -30
+            }
+      },
+      {
+            "index": 94,
+            "tileType": "HAZARD",
+            "name": "ثعبان الشفق الأحمر 🐍 (المربع 95)",
+            "description": "انزلق للخلف إلى المربع #75!",
+            "jumpToIndex": 74,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
+      },
+      {
+            "index": 95,
+            "tileType": "DRAMA_EVENT",
+            "name": "رياح عاتية 🌪️ #96",
+            "description": "رياح قوية تقلب توازن المتسابقين!"
+      },
+      {
+            "index": 96,
+            "tileType": "SECRET_CARD",
+            "name": "صندوق الألغاز #97",
+            "description": "بطاقة حظ غامضة تكافئك."
+      },
+      {
+            "index": 97,
+            "tileType": "RESOURCE",
+            "name": "حذاء الريح #98",
+            "description": "خطوات رشيقة للأمام.",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 55
+            }
+      },
+      {
+            "index": 98,
+            "tileType": "HAZARD",
+            "name": "الثعبان الأسطوري الكاسر 🐍 (المربع 99)",
+            "description": "لدغة قبل خطوة من الفوز تسقطك إلى المربع #78!",
+            "jumpToIndex": 77,
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": -25
+            }
+      },
+      {
+            "index": 99,
+            "tileType": "RESOURCE",
+            "name": "تاج القمة الذهبي (المربع 100) 👑",
+            "description": "خط النهاية والمجد الأبدي! الفائز بالسباق!",
+            "defaultEffect": {
+                  "actionType": "MODIFY_COINS",
+                  "targetType": "SELF",
+                  "value": 150
+            }
       }
-    ],
+],
     "cardsDeck": [
       {
         "id": "snk_01",
@@ -4150,6 +4444,12 @@ export const PRESET_PACKS: Record<string, GeneratedSessionPack> = {
   }
 };
 
+// الألعاب السريعة الجديدة تُسجّل في نفس مكتبة القوالب حتى يعمل مسار
+// البدء والبوتات والتصفير معها دون مسار خاص.
+PRESET_PACKS.CONNECT_FOUR = CONNECT_FOUR_PACK;
+PRESET_PACKS.CHECKERS_CLASSIC = CHECKERS_PACK;
+PRESET_PACKS.BINGO_NIGHT = BINGO_PACK;
+
 /**
  * 6. اختيار الحزمة المناسبة عند غياب الاتصال أو مفتاح الذكاء الاصطناعي
  */
@@ -4172,6 +4472,8 @@ export function getMatchingPresetPack(
     pack = JSON.parse(JSON.stringify(PRESET_PACKS.SOCIAL_MAFIA_SPY));
   } else if (p.includes("سلم") || p.includes("ثعبان") || p.includes("snakes") || p.includes("ladders")) {
     pack = JSON.parse(JSON.stringify(PRESET_PACKS.SNAKES_AND_LADDERS_RPG));
+  } else if (p.includes("لودو") || p.includes("ludo") || p.includes("جاكارو") || p.includes("jackaroo")) {
+    pack = JSON.parse(JSON.stringify(PRESET_PACKS.LUDO_CLASSIC));
   } else if (
     arch === "DECK_BATTLER" ||
     p.includes("cyber") ||

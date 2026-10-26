@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -19,13 +19,46 @@ import {
   FastForward,
   Trophy,
   Medal,
-  Building2
+  Building2,
+  Menu,
+  Eye,
+  QrCode,
+  UserPlus,
+  Mic,
+  MicOff,
+  Smile,
+  Gift,
+  MessageSquare,
+  X,
+  Copy,
+  Check,
+  RotateCcw
 } from "lucide-react";
 import type { FullRoomState } from "../game/gameRoom";
 import { GeneratedSessionPackSchema, type BoardTile, type GameCard, type GeneratedSessionPack } from "../game/schema";
+import { getAllThemes, getThemeById } from "../game/themeRegistry";
 import { FAMOUS_GAME_PRESETS, PRESET_PACKS } from "../game/aiPackGenerator";
+import { JAWAKER_LOUNGE_GAMES, COMMUNITY_MAPS, type CommunityMapItem } from "./studio/presets";
 import { sfx, speakArabicNarrator } from "../utils/soundEffects";
 import LiveEventTicker from "./LiveEventTicker";
+import RealisticDice3D from "./common/RealisticDice3D";
+import MonopolyBoardView from "./monopoly/MonopolyBoardView";
+import UnoCardTableView from "./cards/UnoCardTableView";
+import SnakesLaddersBoardView from "./snakes/SnakesLaddersBoardView";
+import LudoBoardView from "./ludo/LudoBoardView";
+import SpatialPlayerSeat from "./common/SpatialPlayerSeat";
+import WoodTabletopEnvironment from "./common/WoodTabletopEnvironment";
+import GameTables from "./games/GameTables";
+import GameRulesSheet from "./games/GameRulesSheet";
+import { detectRulebookId } from "../game/rulebooks";
+import { resolveGameProfile } from "../game/gameProfiles";
+import { getPlayerInitials } from "../utils/playerDisplay";
+import {
+  gameUsesCurrency,
+  getPlayerResultStat,
+  getWinnerAchievement,
+  orderGameStandings
+} from "../utils/gameResults";
 
 interface SharedBoardProps {
   gameState: FullRoomState;
@@ -33,6 +66,8 @@ interface SharedBoardProps {
   joinUrl: string;
   sendAction?: (payload: Record<string, unknown>) => void;
   isGeneratingAI?: boolean;
+  errorToast?: string | null;
+  isSpectator?: boolean;
 }
 
 function getTileGridPosition(index: number): { row: number; col: number } {
@@ -89,6 +124,35 @@ const TILE_STYLES: Record<
     badge: "تصويت جماعي"
   }
 };
+
+function getMechanismTheme(turnMechanism?: string) {
+  switch (turnMechanism) {
+    case "TERRITORY_COMMAND":
+      return {
+        accentBorder: "border-red-500/50",
+        centerGlow: "shadow-[0_0_60px_rgba(239,68,68,0.25)]",
+        badge: "bg-red-500/20 text-red-300 border-red-500/30"
+      };
+    case "CARD_PLAY_ONLY":
+      return {
+        accentBorder: "border-indigo-500/50",
+        centerGlow: "shadow-[0_0_60px_rgba(99,102,241,0.25)]",
+        badge: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+      };
+    case "SOCIAL_DISCUSSION_VOTE":
+      return {
+        accentBorder: "border-cyan-500/50",
+        centerGlow: "shadow-[0_0_60px_rgba(6,182,212,0.25)]",
+        badge: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
+      };
+    default:
+      return {
+        accentBorder: "border-amber-500/40",
+        centerGlow: "shadow-[0_0_60px_rgba(245,158,11,0.2)]",
+        badge: "bg-amber-500/20 text-amber-300 border-amber-500/30"
+      };
+  }
+}
 
 function GoldenCelebrationParticles() {
   const [isClient, setIsClient] = useState(false);
@@ -220,13 +284,26 @@ export default function SharedBoardScreen({
   lastAnimation,
   joinUrl,
   sendAction,
-  isGeneratingAI = false
+  isGeneratingAI = false,
+  errorToast = null,
+  isSpectator = false
 }: SharedBoardProps) {
   const [visualPositions, setVisualPositions] = useState<Record<string, number>>({});
   const [narratorMessage, setNarratorMessage] = useState<string>(
     "بانتظار رمية النرد الأولى..."
   );
   const [displayedDice, setDisplayedDice] = useState<number | null>(null);
+  const [displayedDiceValues, setDisplayedDiceValues] = useState<number[]>([1]);
+  const [isRollingDice, setIsRollingDice] = useState<boolean>(false);
+  const diceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (diceIntervalRef.current) {
+        clearInterval(diceIntervalRef.current);
+      }
+    };
+  }, []);
   const [activeCardModal, setActiveCardModal] = useState<GameCard | null>(null);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState<boolean>(true);
   const [eventHistory, setEventHistory] = useState<string[]>([
@@ -234,19 +311,44 @@ export default function SharedBoardScreen({
     "النرد والبطاقات جاهزة للإثارة والمنافسة."
   ]);
   const [selectedPackMode, setSelectedPackMode] = useState<string>("MONOPOLY_CLASSIC");
+  const [lobbyCategory, setLobbyCategory] = useState<"BASE" | "COMMUNITY" | "AI_IMPORT">("BASE");
   const [customImportedPack, setCustomImportedPack] = useState<GeneratedSessionPack | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [floatingReactions, setFloatingReactions] = useState<Array<{
     id: string;
     emoji: string;
+    text?: string;
+    voiceId?: string;
     playerName: string;
     playerColor: string;
     startX: number;
   }>>([]);
+  const [showQRModal, setShowQRModal] = useState<boolean>(false);
+  const [showMenuModal, setShowMenuModal] = useState<boolean>(false);
+  const [isMicMuted, setIsMicMuted] = useState<boolean>(true);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Auto-load custom pack from Studio if present in sessionStorage
+  // Auto-load custom pack from Studio if present in sessionStorage or URL preset.
+  // An explicit ?preset= choice always wins, so a stale custom studio pack from a
+  // previous room can never hijack the lobby or the next match.
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const presetParam = sp.get("preset");
+
+      if (presetParam) {
+        setSelectedPackMode(presetParam);
+        const isCommunityMap = COMMUNITY_MAPS.some(
+          (map) => map.presetKey === presetParam || map.id === presetParam
+        );
+        if (isCommunityMap) {
+          setLobbyCategory("COMMUNITY");
+        } else if (JAWAKER_LOUNGE_GAMES.some((game) => game.key === presetParam)) {
+          setLobbyCategory("BASE");
+        }
+      }
+
       const stored = sessionStorage.getItem("custom_studio_pack");
       if (stored) {
         try {
@@ -254,7 +356,10 @@ export default function SharedBoardScreen({
           const validated = GeneratedSessionPackSchema.safeParse(parsed);
           if (validated.success) {
             setCustomImportedPack(validated.data);
-            setSelectedPackMode("CUSTOM_IMPORT");
+            if (!presetParam) {
+              setSelectedPackMode("CUSTOM_IMPORT");
+              setLobbyCategory("AI_IMPORT");
+            }
           }
         } catch {}
       }
@@ -302,6 +407,12 @@ export default function SharedBoardScreen({
     }
   }, [narratorMessage, isVoiceEnabled]);
 
+  // Synchronize dynamic procedural audio theme with active room/game theme
+  useEffect(() => {
+    const currentThemeId = gameState.settings?.themeId || gameState.themeId || "ARABIAN_MAJLIS";
+    sfx.setAudioTheme(currentThemeId);
+  }, [gameState.settings?.themeId, gameState.themeId]);
+
   const isGenerating = Boolean(isGeneratingAI || lastAnimation?.type === "AI_GENERATING");
 
   // Tile-by-Tile Hopping Animation
@@ -320,6 +431,9 @@ export default function SharedBoardScreen({
             next[player.id] = player.position;
             changed = true;
           }
+        }
+        if (changed) {
+          sfx.playPawnHop();
         }
         return changed ? next : prev;
       });
@@ -355,12 +469,45 @@ export default function SharedBoardScreen({
       }
     }
 
+    if (lastAnimation.type === "BOT_THINKING") {
+      if (lastAnimation.messageAr) {
+        setNarratorMessage(lastAnimation.messageAr);
+        incomingMessages.push(lastAnimation.messageAr);
+      }
+    }
+
+    if (lastAnimation.type === "DICE_ROLL_START") {
+      sfx.playDiceTumble();
+      setIsRollingDice(true);
+    }
+
     if (lastAnimation.type === "DICE_ROLLED") {
-      sfx.playDiceRoll();
+      const diceValues =
+        lastAnimation.dice2 && lastAnimation.dice2 > 0
+          ? [lastAnimation.dice1 || 1, lastAnimation.dice2]
+          : [lastAnimation.diceValue || 1];
+
+      setDisplayedDiceValues(diceValues);
       setDisplayedDice(lastAnimation.diceValue);
+
+      if (diceIntervalRef.current) {
+        clearTimeout(diceIntervalRef.current as any);
+      }
+
+      // Keep rolling state for 700ms to smoothly decelerate into settled dice faces
+      diceIntervalRef.current = setTimeout(() => {
+        setIsRollingDice(false);
+        sfx.playCoinChime();
+        diceIntervalRef.current = null;
+      }, 700) as any;
+
       const diceMsg = `رمى ${gameState.players[lastAnimation.playerId]?.name || "اللاعب"} النرد وحصل على ${lastAnimation.diceValue}!`;
       setNarratorMessage(diceMsg);
       incomingMessages.push(diceMsg);
+    }
+
+    if (lastAnimation.type === "SECRET_CARD_DRAWN") {
+      sfx.playCardSlide();
     }
 
     if (
@@ -368,7 +515,11 @@ export default function SharedBoardScreen({
       lastAnimation.type === "SECRET_CARD_PLAYED" ||
       lastAnimation.type === "VOTE_SESSION_STARTED"
     ) {
-      sfx.playDramaAlert();
+      if (lastAnimation.type === "SECRET_CARD_PLAYED" || lastAnimation.type === "DRAMA_CARD_TRIGGERED") {
+        sfx.playCardSlap();
+      } else {
+        sfx.playDramaAlert();
+      }
       setActiveCardModal(lastAnimation.card);
       if (lastAnimation.events?.[0]?.messageAr) {
         setNarratorMessage(lastAnimation.events[0].messageAr);
@@ -430,17 +581,30 @@ export default function SharedBoardScreen({
 
     if (lastAnimation.type === "GAME_OVER") {
       sfx.playCoinChime();
-      const winnerName = lastAnimation.winner?.name || "البطل";
+      const winnerName = lastAnimation.winner?.name;
       const reason = lastAnimation.reasonAr || "تتويج بطل السهرة!";
-      incomingMessages.push(`🏆 فاز ${winnerName} بالمركز الأول! ${reason}`);
+      incomingMessages.push(
+        winnerName
+          ? `🏆 فاز ${winnerName} بالمركز الأول! ${reason}`
+          : `🤝 انتهت الجولة بالتعادل! ${reason}`
+      );
     }
 
     if (lastAnimation.type === "LIVE_REACTION" && lastAnimation.emoji) {
-      sfx.playTurnChime();
+      if (lastAnimation.voiceId) {
+        sfx.playReactionCue(lastAnimation.voiceId);
+      } else {
+        sfx.playTurnChime();
+      }
+      if (lastAnimation.text && isVoiceEnabled) {
+        speakArabicNarrator(lastAnimation.text);
+      }
       const player = gameState.players[lastAnimation.playerId];
       const newReaction = {
         id: `react_${Date.now()}_${Math.random()}`,
         emoji: lastAnimation.emoji,
+        text: lastAnimation.text,
+        voiceId: lastAnimation.voiceId,
         playerName: player?.name || "لاعب",
         playerColor: player?.color || "#eab308",
         startX: 15 + Math.random() * 70
@@ -448,7 +612,7 @@ export default function SharedBoardScreen({
       setFloatingReactions((prev) => [...prev.slice(-15), newReaction]);
       setTimeout(() => {
         setFloatingReactions((prev) => prev.filter((r) => r.id !== newReaction.id));
-      }, 2500);
+      }, 3200);
     }
 
     if (incomingMessages.length > 0) {
@@ -466,25 +630,38 @@ export default function SharedBoardScreen({
   useEffect(() => {
     if (gameState.phase === "GAME_OVER") {
       sfx.playCoinChime();
-      const standings = Object.values(gameState.players).sort((a, b) => b.coins - a.coins);
-      const winner = lastAnimation?.winner || standings[0];
-      if (winner && isVoiceEnabled) {
-        speakArabicNarrator(`مبروك للفائز ${winner.name}! لقد توج بطلاً للسهرة!`);
+      const winner = gameState.winner || lastAnimation?.winner;
+      if (isVoiceEnabled) {
+        if (winner) {
+          speakArabicNarrator(`مبروك للفائز ${winner.name}! لقد توج بطلاً للسهرة!`);
+        } else {
+          speakArabicNarrator("انتهت الجولة بالتعادل بين اللاعبين. أحسنتم جميعاً!");
+        }
       }
     }
   }, [gameState.phase]);
 
   // ============ GAME OVER SCREEN ============
   if (gameState.phase === "GAME_OVER") {
-    const standings =
-      lastAnimation?.standings ||
-      Object.values(gameState.players).sort((a, b) => b.coins - a.coins);
-    const winner = lastAnimation?.winner || standings[0];
+    const resultRulebookId = detectRulebookId(gameState);
+    const resultUsesCurrency = gameUsesCurrency(resultRulebookId);
+    const winner = lastAnimation?.winner || gameState.winner;
+    const standings = orderGameStandings(
+      (lastAnimation?.standings as any[]) || Object.values(gameState.players),
+      gameState,
+      resultRulebookId,
+      winner?.id
+    );
+    const resultReason =
+      lastAnimation?.reasonAr ||
+      lastAnimation?.victoryReason ||
+      gameState.victoryReason ||
+      "اختتمت الجولات بنجاح وتفوق البطل على منافسيه";
 
     return (
       <div
         dir="rtl"
-        className="w-screen h-screen bg-slate-950 text-white flex flex-col justify-between p-6 overflow-hidden select-none font-sans relative"
+        className="w-screen min-h-screen bg-slate-950 bg-mesh-dark text-white flex flex-col justify-between p-4 sm:p-6 md:p-8 overflow-x-hidden overflow-y-auto select-none font-sans relative"
       >
         {/* Celebratory Golden Confetti & Sparkles Particle Effects */}
         <GoldenCelebrationParticles />
@@ -500,7 +677,7 @@ export default function SharedBoardScreen({
                 انتهت السهرة - تتويج بطل اللعبة!
               </h1>
               <p className="text-sm text-slate-400">
-                {lastAnimation?.reasonAr || "اختتمت الجولات بنجاح وتفوق البطل على منافسيه"}
+                {resultReason}
               </p>
             </div>
           </div>
@@ -537,27 +714,48 @@ export default function SharedBoardScreen({
             </motion.div>
 
             <span className="px-4 py-1.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 font-black text-xs md:text-sm uppercase tracking-widest mb-2 shadow-sm">
-              👑 الفائز الأول بالعرش
+              {winner ? "👑 الفائز الأول بالعرش" : "🤝 انتهت الجولة بالتعادل"}
             </span>
 
-            {winner && (
+            {winner ? (
               <>
-                <h2 className="text-3xl md:text-5xl font-black text-white mt-1 mb-2 tracking-wide drop-shadow-md">
+                <h2 className="text-3xl md:text-5xl font-black text-white mt-1 mb-2 tracking-wide drop-shadow-md truncate max-w-full px-2" title={winner.name}>
                   {winner.name}
                 </h2>
-                <div className="flex items-center gap-3 bg-amber-950/40 border border-amber-500/40 px-6 py-2.5 rounded-2xl my-2 shadow-inner">
-                  <Coins className="w-7 h-7 text-amber-400" />
-                  <span className="text-3xl font-black text-amber-300">
-                    {winner.coins}
-                  </span>
-                  <span className="text-base text-amber-200 font-bold">
-                    {gameState.currencyName || "ذهبة"}
-                  </span>
-                </div>
+                {resultUsesCurrency ? (
+                  <div className="flex items-center gap-3 bg-amber-950/40 border border-amber-500/40 px-6 py-2.5 rounded-2xl my-2 shadow-inner">
+                    <Coins className="w-7 h-7 text-amber-400" />
+                    <span className="text-3xl font-black text-amber-300">
+                      {winner.coins}
+                    </span>
+                    <span className="text-base text-amber-200 font-bold">
+                      {gameState.currencyName || "ذهبة"}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-500/40 px-5 py-2.5 rounded-2xl my-2 shadow-inner">
+                    <Trophy className="w-6 h-6 text-amber-300" />
+                    <span className="text-lg font-black text-amber-200">
+                      {getWinnerAchievement(resultRulebookId)}
+                    </span>
+                  </div>
+                )}
                 <p className="text-slate-300 text-sm max-w-md mt-2">
-                  {lastAnimation?.reasonAr || "أداء استثنائي وتخطيط استراتيجي قاده لاعتلاء القمة!"}
+                  {resultReason}
                 </p>
               </>
+            ) : (
+              <div className="flex flex-col items-center gap-3 my-4">
+                <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-white/15 flex items-center justify-center text-3xl">
+                  🤝
+                </div>
+                <p className="text-slate-300 text-sm md:text-base font-bold max-w-md">
+                  {resultReason}
+                </p>
+                <p className="text-xs text-slate-500">
+                  لا يوجد فائز منفرد — الجميع خرج بسلام من هذه الجولة.
+                </p>
+              </div>
             )}
           </div>
 
@@ -567,7 +765,7 @@ export default function SharedBoardScreen({
               <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
                 <h3 className="text-lg font-black flex items-center gap-2">
                   <Medal className="w-5 h-5 text-amber-400" />
-                  الترتيب النهائي
+                  {winner ? "الترتيب النهائي" : "نتائج اللاعبين"}
                 </h3>
                 <span className="text-xs text-slate-400 font-bold">
                   {standings.length} لاعبين
@@ -576,9 +774,9 @@ export default function SharedBoardScreen({
 
               <div className="space-y-2.5 max-h-[38vh] overflow-y-auto pr-1">
                 {standings.map((player: any, idx: number) => {
-                  const isFirst = idx === 0;
-                  const isSecond = idx === 1;
-                  const isThird = idx === 2;
+                  const isFirst = Boolean(winner) && idx === 0;
+                  const isSecond = Boolean(winner) && idx === 1;
+                  const isThird = Boolean(winner) && idx === 2;
 
                   return (
                     <div
@@ -608,23 +806,29 @@ export default function SharedBoardScreen({
                               : "bg-slate-800 text-slate-400"
                           }`}
                         >
-                          {idx + 1}
+                          {winner ? idx + 1 : "–"}
                         </div>
                         <div
                           style={{ backgroundColor: player.color }}
                           className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-slate-950 text-xs shadow shrink-0"
                         >
-                          {player.name.slice(0, 2)}
+                          {getPlayerInitials(player.name)}
                         </div>
-                        <span className="font-bold text-sm text-white truncate max-w-[120px]">
+                        <span className="font-bold text-sm text-white truncate max-w-[120px]" title={player.name}>
                           {player.name}
                         </span>
                       </div>
 
-                      <div className="text-left font-black text-amber-400 text-sm flex items-center gap-1">
-                        <span>{player.coins}</span>
-                        <Coins className="w-3.5 h-3.5 text-amber-400" />
-                      </div>
+                      {resultUsesCurrency ? (
+                        <div className="text-left font-black text-amber-400 text-sm flex items-center gap-1 shrink-0">
+                          <span>{player.coins}</span>
+                          <Coins className="w-3.5 h-3.5 text-amber-400" />
+                        </div>
+                      ) : (
+                        <div className="text-left font-bold text-[11px] text-amber-200/80 shrink-0 max-w-[130px] truncate" title={getPlayerResultStat(resultRulebookId, player.id, gameState)}>
+                          {getPlayerResultStat(resultRulebookId, player.id, gameState)}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -649,16 +853,67 @@ export default function SharedBoardScreen({
   if (gameState.phase === "LOBBY") {
     const playersList = Object.values(gameState.players);
     const playerCount = playersList.length;
+    const currentThemeId = gameState.settings?.themeId || gameState.themeId || "ARABIAN_MAJLIS";
+    const activeTheme = getThemeById(currentThemeId);
+    const currentPlayMode = gameState.settings?.playMode || gameState.playMode || "CASUAL";
+    const allUniversalThemes = getAllThemes();
+    const lobbyCommunityMap = COMMUNITY_MAPS.find((m) => m.presetKey === selectedPackMode);
+    const lobbyLoungeGame = JAWAKER_LOUNGE_GAMES.find((g) => g.key === selectedPackMode);
+    // الألعاب المجرّدة (كونكت فور/الضامة/بينغو) لا تعتمد على ثيم العالم ولا الرصيد.
+    const supportsThemeSelector = !["CONNECT_FOUR", "CHECKERS_CLASSIC", "BINGO_NIGHT"].includes(
+      selectedPackMode
+    );
+    const supportsStartingCoins =
+      Boolean(lobbyCommunityMap) ||
+      ["MONOPOLY_CLASSIC", "RIYADH_VIP", "WORLD_CONQUEST_RISK", "GENERIC_BOARD", "AI", "CUSTOM_IMPORT"].includes(
+        selectedPackMode
+      );
+    const noCoinsNotes: Record<string, string> = {
+      CONNECT_FOUR: "🔴 كونكت فور لا يستخدم رصيداً — الفوز بأربعة أقراص متصلة.",
+      CHECKERS_CLASSIC: "⚫ الضامة لا تستخدم رصيداً — الفوز بأسر قطع الخصم أو تحريم حركته.",
+      BINGO_NIGHT: "🎱 بينغو لا يستخدم رصيداً — الفوز بإكمال أول خط في بطاقتك.",
+      LUDO_CLASSIC: "🎲 لودو لا يستخدم رصيداً — الفوز بإيصال القطع الأربعة إلى المركز.",
+      TACTICAL_CARDS_UNO: "🃏 أونو لا يستخدم رصيداً — الفوز بالتخلص من كل أوراقك.",
+      SNAKES_AND_LADDERS_RPG: "🪜 السلم والثعبان لا يستخدم رصيداً — الفوز بالوصول إلى المربع 100.",
+      SOCIAL_MAFIA_SPY: "🕵️ مافيا لا تستخدم رصيداً — الفوز بإقصاء الفريق الخصم بالتصويت."
+    };
+    const noCoinsNote =
+      noCoinsNotes[selectedPackMode] ||
+      "هذه اللعبة لا تستخدم رصيداً — الفوز يتحقق وفق شروط اللعبة المعلنة.";
+    const selectedWinText =
+      lobbyCommunityMap
+        ? "إفلاس المنافسين أو احتكار السوق بالكامل"
+        : lobbyLoungeGame?.rulesPreview.win ||
+          (selectedPackMode === "AI" || selectedPackMode === "CUSTOM_IMPORT"
+            ? customImportedPack?.winCondition === "MOST_COINS"
+              ? "جمع أعلى رصيد عند نهاية الجولات"
+              : "تحقيق شرط الفوز المولّد في الحزمة"
+            : "اللعب حتى تحقيق الهدف أو إنهاء الرقعة");
+    const lobbyRulesId = lobbyCommunityMap
+      ? detectRulebookId(lobbyCommunityMap.pack)
+      : lobbyLoungeGame
+        ? detectRulebookId({ key: lobbyLoungeGame.key })
+        : customImportedPack
+          ? detectRulebookId(customImportedPack)
+          : "GENERIC";
+    const activeGameProfile = resolveGameProfile(
+      selectedPackMode === "CUSTOM_IMPORT" || selectedPackMode === "AI"
+        ? undefined
+        : selectedPackMode,
+      selectedPackMode === "CUSTOM_IMPORT" ? customImportedPack || undefined : undefined
+    );
+    const canAddBot = playerCount < activeGameProfile.maxPlayers;
+    const botsToAdd = Math.max(0, activeGameProfile.minPlayers - playerCount);
 
     return (
       <div
         dir="rtl"
-        className="w-screen h-screen bg-slate-950 text-white flex flex-col justify-between p-8 overflow-hidden select-none font-sans"
+        className="w-screen min-h-screen bg-slate-950 bg-mesh-dark text-white flex flex-col justify-between p-4 sm:p-6 md:p-8 overflow-x-hidden overflow-y-auto select-none font-sans relative"
       >
         {/* Header */}
-        <header className="flex items-center justify-between bg-slate-900/90 border border-slate-800 rounded-3xl px-8 py-5 shadow-xl">
+        <header className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 rounded-3xl px-6 sm:px-8 py-5 shadow-xl">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-3xl shadow-lg">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-3xl shadow-lg shrink-0">
               🎲
             </div>
             <div>
@@ -667,16 +922,48 @@ export default function SharedBoardScreen({
             </div>
           </div>
 
-          <div className="flex items-center gap-4 bg-slate-950 px-6 py-3 rounded-2xl border border-slate-800">
-            <span className="text-xs text-slate-400">رمز الغرفة</span>
-            <span className="text-3xl font-black tracking-widest text-emerald-400 font-mono">
-              {gameState.roomId}
-            </span>
+          <div className="flex items-center gap-3">
+            {/* Active Theme Badge in Header */}
+            <div className="hidden sm:flex items-center gap-2 bg-slate-950/80 px-4 py-2 rounded-2xl border border-slate-800 shadow">
+              <span className="text-xl">
+                {currentThemeId === "ARABIAN_MAJLIS"
+                  ? "🕌"
+                  : currentThemeId === "CYBERPUNK_NEON"
+                  ? "🏙️"
+                  : currentThemeId === "DEEP_SPACE"
+                  ? "🚀"
+                  : currentThemeId === "CARTOON_OFFICE"
+                  ? "☕"
+                  : "⚔️"}
+              </span>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 block font-bold">العالم النشط</span>
+                <span className="text-xs font-black text-amber-300">{activeTheme.titleAr}</span>
+              </div>
+            </div>
+
+            {/* Play Mode Badge in Header */}
+            <div className="hidden sm:flex items-center gap-2 bg-slate-950/80 px-4 py-2 rounded-2xl border border-slate-800 shadow">
+              <span className="text-xl">{currentPlayMode === "CASUAL" ? "☕" : "🏆"}</span>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 block font-bold">طور اللعب</span>
+                <span className={`text-xs font-black ${currentPlayMode === "CASUAL" ? "text-amber-400" : "text-rose-400"}`}>
+                  {currentPlayMode === "CASUAL" ? "وناسة وجمعة" : "محترفين رسمي"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 bg-slate-950 px-6 py-3 rounded-2xl border border-slate-800">
+              <span className="text-xs text-slate-400">رمز الغرفة</span>
+              <span className="text-3xl font-black tracking-widest text-emerald-400 font-mono">
+                {gameState.roomId}
+              </span>
+            </div>
           </div>
         </header>
 
         {/* Center / Body: QR & Players */}
-        <main className="flex-1 my-6 grid grid-cols-1 md:grid-cols-2 gap-8 items-center max-w-6xl mx-auto w-full">
+        <main className="flex-1 my-6 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start max-w-6xl mx-auto w-full">
           {/* QR Code Card */}
           <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 flex flex-col items-center justify-center text-center shadow-2xl backdrop-blur-md">
             <div className="bg-white p-4 rounded-3xl shadow-2xl mb-4 transform hover:scale-105 transition-transform">
@@ -692,16 +979,30 @@ export default function SharedBoardScreen({
           </div>
 
           {/* Connected Players Card */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 flex flex-col justify-between h-full shadow-2xl backdrop-blur-md">
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-8 flex flex-col justify-between w-full shadow-2xl backdrop-blur-md">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-black flex items-center gap-2">
                   <Users className="w-6 h-6 text-indigo-400" />
                   اللاعبون المنضمون
                 </h2>
-                <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 font-black text-sm">
-                  {playerCount} لاعبين
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => sendAction?.({ type: "ADD_BOT" })}
+                    disabled={!canAddBot}
+                    className="px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/50 text-xs font-black transition-all flex items-center gap-1 active:scale-95 disabled:opacity-40 shadow-sm"
+                    title={
+                      canAddBot
+                        ? "إضافة لاعب روبوت ذكي"
+                        : `وصلت الغرفة للحد الأقصى (${activeGameProfile.maxPlayers})`
+                    }
+                  >
+                    <span>➕ إضافة بوت 🤖</span>
+                  </button>
+                  <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 font-black text-sm">
+                    {playerCount}/{activeGameProfile.maxPlayers} لاعبين
+                  </span>
+                </div>
               </div>
 
               {playerCount === 0 ? (
@@ -721,13 +1022,20 @@ export default function SharedBoardScreen({
                         style={{ backgroundColor: player.color }}
                         className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-slate-950 shadow shrink-0"
                       >
-                        {player.name.slice(0, 2)}
+                        {getPlayerInitials(player.name)}
                       </div>
-                      <div className="truncate">
-                        <div className="font-bold text-sm text-white truncate">{player.name}</div>
+                      <div className="truncate min-w-0 flex-1">
+                        <div className="font-bold text-sm text-white truncate flex items-center gap-1.5 min-w-0">
+                          <span className="truncate min-w-0" title={player.name}>{player.name}</span>
+                          {player.isBot && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 font-black">
+                              BOT 🤖
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-emerald-400 flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
-                          متصل
+                          {player.isBot ? "روبوت جاهز" : "متصل"}
                         </span>
                       </div>
                     </div>
@@ -736,59 +1044,179 @@ export default function SharedBoardScreen({
               )}
             </div>
 
-            {/* Game Settings Controls */}
-            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 my-2 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400 font-bold">عدد الجولات:</span>
-                <div className="flex gap-1.5">
-                  {[5, 10, 15, 20].map((rounds) => {
-                    const isSelected = (gameState.settings?.maxRounds ?? gameState.maxRounds) === rounds;
-                    return (
-                      <button
-                        key={rounds}
-                        onClick={() => sendAction?.({ type: "UPDATE_SETTINGS", settings: { maxRounds: rounds } })}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                          isSelected
-                            ? "bg-amber-500 text-slate-950 shadow"
-                            : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                        }`}
-                      >
-                        {rounds}
-                      </button>
-                    );
-                  })}
+            {/* Unified Smart Hints Feature Banner */}
+            <div className="bg-slate-950/70 border border-amber-500/30 rounded-2xl p-3 my-2 flex items-center justify-between gap-3 shadow">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 text-base shrink-0">
+                  💡
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400 font-bold">رصيد البداية:</span>
-                <div className="flex gap-1.5">
-                  {[100, 150, 200, 300].map((coins) => {
-                    const isSelected = (gameState.settings?.startingCoins ?? 150) === coins;
-                    return (
-                      <button
-                        key={coins}
-                        onClick={() => sendAction?.({ type: "UPDATE_SETTINGS", settings: { startingCoins: coins } })}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                          isSelected
-                            ? "bg-emerald-500 text-slate-950 shadow"
-                            : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                        }`}
-                      >
-                        {coins} {gameState.currencyName || "ذهبة"}
-                      </button>
-                    );
-                  })}
+                <div>
+                  <div className="text-xs font-black text-amber-300 flex items-center gap-2">
+                    <span>نظام التلميحات الذكية مفعّل تلقائياً</span>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                      نشط لجميع اللاعبين ✓
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-normal">
+                    يقدم إرشادات تفاعلية أثناء الدور، مع إمكانية التخطي أو الإخفاء بضغطة زر واحدة من شاشة الهاتف.
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Game Archetype & Pack Selector */}
-            <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3 my-2 space-y-2">
+            {/* Universal Theme Selector Bar (عالم السهرة والشخصيات 🎨) */}
+            {supportsThemeSelector && (
+            <div className="bg-slate-950/80 border border-slate-800 rounded-3xl p-4 my-2 space-y-3 shadow-inner">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  قالب وحزمة اللعبة:
+                <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>عالم السهرة والشخصيات 🎨</span>
+                </span>
+                <span
+                  className="text-[11px] font-black px-2.5 py-0.5 rounded-full border shadow-sm"
+                  style={{
+                    backgroundColor: activeTheme.colorPalette.boardTint,
+                    borderColor: activeTheme.colorPalette.accent,
+                    color: activeTheme.colorPalette.primary
+                  }}
+                >
+                  {activeTheme.titleAr}
+                </span>
+              </div>
+
+              {/* 4 Universal Themes Buttons Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {allUniversalThemes.map((t) => {
+                  const isSelected = currentThemeId === t.id;
+                  const themeIcon =
+                    t.id === "ARABIAN_MAJLIS"
+                      ? "🕌"
+                      : t.id === "CYBERPUNK_NEON"
+                      ? "🏙️"
+                      : t.id === "DEEP_SPACE"
+                      ? "🚀"
+                      : t.id === "CARTOON_OFFICE"
+                      ? "☕"
+                      : "⚔️";
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => sendAction?.({ type: "UPDATE_SETTINGS", settings: { themeId: t.id } })}
+                      className={`p-2.5 rounded-2xl border text-right transition-all flex flex-col justify-between gap-1 shadow-md relative overflow-hidden ${
+                        isSelected
+                          ? "ring-2 ring-amber-400/60 shadow-lg scale-[1.02]"
+                          : "border-slate-800 bg-slate-900/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                      }`}
+                      style={
+                        isSelected
+                          ? {
+                              borderColor: t.colorPalette.accent,
+                              backgroundColor: "rgba(15, 23, 42, 0.95)",
+                              boxShadow: `0 0 16px ${t.colorPalette.glowColor}`
+                            }
+                          : {}
+                      }
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-2xl">{themeIcon}</span>
+                        {isSelected && (
+                          <span
+                            className="text-[9px] font-black px-1.5 py-0.5 rounded-md shadow"
+                            style={{
+                              backgroundColor: t.colorPalette.primary,
+                              color: "#fff"
+                            }}
+                          >
+                            مفعل ✓
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs font-black text-white mt-1 truncate">
+                        {t.titleAr}
+                      </div>
+                      <div className="text-[9px] text-slate-400 truncate">
+                        {t.visualStyle}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active Theme Player Tokens Preview */}
+              <div className="p-2.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-inner">
+                <span className="text-[11px] font-bold text-amber-300/90 whitespace-nowrap flex items-center gap-1">
+                  <span>الشخصيات والقطع:</span>
+                </span>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-thin scrollbar-thumb-slate-800 text-[11px] text-slate-200 font-medium">
+                  {activeTheme.playerTokens.map((token, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800 whitespace-nowrap shadow-sm text-slate-200"
+                    >
+                      {token}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            )}
+
+            {/* Game Settings Controls */}
+            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 my-2 space-y-3">
+              <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5 gap-2">
+                <span className="text-xs text-amber-300 font-bold flex items-center gap-1.5 min-w-0">
+                  🏆 شرط الفوز: <span className="truncate">{selectedWinText}</span>
+                </span>
+                <span className="text-[11px] text-amber-400/90 bg-amber-500/20 px-2 py-0.5 rounded-full font-medium shrink-0">
+                  {lobbyLoungeGame?.rulesPreview.mechanism || lobbyCommunityMap?.rulesPreview.mechanism || "حسم طبيعي"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-400 font-bold">قوانين اللعبة الحالية:</span>
+                <GameRulesSheet
+                  rulebookId={lobbyRulesId}
+                  variant="ghost"
+                  label="اقرأ القوانين 📖"
+                />
+              </div>
+
+              {supportsStartingCoins ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400 font-bold">رصيد البداية:</span>
+                  <div className="flex gap-1.5">
+                    {[100, 150, 200, 300].map((coins) => {
+                      const isSelected = (gameState.settings?.startingCoins ?? 150) === coins;
+                      return (
+                        <button
+                          key={coins}
+                          onClick={() => sendAction?.({ type: "UPDATE_SETTINGS", settings: { startingCoins: coins } })}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            isSelected
+                              ? "bg-emerald-500 text-slate-950 shadow"
+                              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                          }`}
+                        >
+                          {coins} {gameState.currencyName || "ذهبة"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-bold text-slate-400">
+                  {noCoinsNote}
+                </div>
+              )}
+            </div>
+
+            {/* Jawaker-Style Lounge Games Carousel & Selector */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-3xl p-4 my-2 space-y-3 shadow-inner">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
+                  <span>صالة ألعاب المجلس — اختر اللعبة:</span>
                 </span>
                 <a
                   href="/studio"
@@ -800,83 +1228,342 @@ export default function SharedBoardScreen({
                 </a>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-right max-h-60 overflow-y-auto pr-1">
-                {/* AI Pack Option */}
+              {/* Category Segmented Switch: Base Classic vs Community Maps vs Custom */}
+              <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900 border border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setSelectedPackMode("AI")}
-                  className={`p-2 rounded-xl border text-right transition-all flex flex-col justify-between ${
-                    selectedPackMode === "AI"
-                      ? "border-purple-400 bg-purple-950/50 text-purple-200 shadow-md shadow-purple-500/20"
-                      : "border-slate-800 bg-slate-900/50 text-slate-400 hover:bg-slate-800/60"
+                  onClick={() => {
+                    setLobbyCategory("BASE");
+                    if (!JAWAKER_LOUNGE_GAMES.some((g) => g.key === selectedPackMode)) {
+                      setSelectedPackMode("MONOPOLY_CLASSIC");
+                    }
+                  }}
+                  className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                    lobbyCategory === "BASE"
+                      ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md font-black"
+                      : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  <div className="font-extrabold text-xs text-white flex items-center justify-between">
-                    <span>✨ ابتكار AI مخصص</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">توليد فوري</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-1">توليد مخصص حسب أسماء واقتراحات الشلة</div>
+                  <span>🏛️</span>
+                  <span>الألعاب الأصلية (Base)</span>
                 </button>
 
-                {/* 6 Famous Game Presets */}
-                {FAMOUS_GAME_PRESETS.map((preset) => {
-                  const isSelected = selectedPackMode === preset.key;
-                  return (
-                    <div
-                      key={preset.key}
-                      onClick={() => setSelectedPackMode(preset.key)}
-                      className={`p-2 rounded-xl border text-right transition-all flex flex-col justify-between cursor-pointer ${
-                        isSelected
-                          ? "border-amber-400 bg-amber-950/40 text-amber-200 shadow-md shadow-amber-500/20"
-                          : "border-slate-800 bg-slate-900/50 text-slate-400 hover:bg-slate-800/60"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLobbyCategory("COMMUNITY");
+                    if (!COMMUNITY_MAPS.some((m) => m.presetKey === selectedPackMode)) {
+                      setSelectedPackMode("RIYADH_VIP");
+                    }
+                  }}
+                  className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                    lobbyCategory === "COMMUNITY"
+                      ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-md font-black"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <span>🌐</span>
+                  <span>مابات المجتمع (Mods)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLobbyCategory("AI_IMPORT");
+                    if (selectedPackMode !== "AI" && selectedPackMode !== "CUSTOM_IMPORT") {
+                      setSelectedPackMode("AI");
+                    }
+                  }}
+                  className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                    lobbyCategory === "AI_IMPORT"
+                      ? "bg-slate-800 text-purple-300 border border-purple-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <span>✨</span>
+                  <span>AI واستيراد</span>
+                </button>
+              </div>
+
+              {/* Horizontal Carousel Tabs */}
+              <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-800">
+                {lobbyCategory === "BASE" &&
+                  JAWAKER_LOUNGE_GAMES.map((game) => {
+                    const isSelected = selectedPackMode === game.key;
+                    return (
+                      <button
+                        key={game.key}
+                        type="button"
+                        onClick={() => setSelectedPackMode(game.key)}
+                        className={`px-3 py-2 rounded-2xl border text-right transition-all flex items-center gap-2 whitespace-nowrap shrink-0 shadow-md ${
+                          isSelected
+                            ? `border-amber-400 bg-gradient-to-r from-amber-950/80 to-slate-900 text-amber-200 ring-2 ring-amber-400/40 shadow-lg scale-[1.02]`
+                            : "border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                        }`}
+                      >
+                        <span className="relative block h-9 w-14 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-slate-950">
+                          <img
+                            src={game.cover}
+                            alt={game.titleAr}
+                            className="h-full w-full object-cover"
+                          />
+                          <span className="absolute bottom-0 left-0.5 text-[10px] leading-none drop-shadow">
+                            {game.icon}
+                          </span>
+                        </span>
+                        <div className="text-right">
+                          <div className="text-xs font-black text-white">{game.titleAr}</div>
+                          <span className="text-[9px] text-amber-300/80 font-mono block">{game.badge}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                {lobbyCategory === "COMMUNITY" &&
+                  COMMUNITY_MAPS.map((map) => {
+                    const isSelected = selectedPackMode === map.presetKey;
+                    return (
+                      <button
+                        key={map.presetKey}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPackMode(map.presetKey);
+                          // زامن معاينة الثيم مع هوية الخريطة (يمكن للمضيف
+                          // بعدها اختيار عالم آخر من منتقي الثيمات).
+                          sendAction?.({
+                            type: "UPDATE_SETTINGS",
+                            settings: { themeId: map.themeId }
+                          });
+                        }}
+                        className={`px-3 py-2 rounded-2xl border text-right transition-all flex items-center gap-2 whitespace-nowrap shrink-0 shadow-md ${
+                          isSelected
+                            ? `border-indigo-400 bg-gradient-to-r from-indigo-950/80 to-purple-950/80 text-indigo-200 ring-2 ring-indigo-400/40 shadow-lg scale-[1.02]`
+                            : "border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                        }`}
+                      >
+                        <span className="text-xl">
+                          {map.presetKey === "RIYADH_VIP" ? "🏙️" : map.presetKey === "CYBERPUNK_HEIST" ? "⚡" : map.presetKey === "DEEP_SPACE_CUSTOM" ? "🚀" : map.presetKey === "MEDIEVAL_CUSTOM" ? "⚔️" : "🕌"}
+                        </span>
+                        <div className="text-right">
+                          <div className="text-xs font-black text-white">{map.titleAr}</div>
+                          <span className="text-[9px] text-indigo-300 font-mono block">{map.badge}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                {lobbyCategory === "AI_IMPORT" && (
+                  <>
+                    {/* AI Custom Generator Tab */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPackMode("AI")}
+                      className={`px-3 py-2 rounded-2xl border text-right transition-all flex items-center gap-2 whitespace-nowrap shrink-0 shadow-md ${
+                        selectedPackMode === "AI"
+                          ? "border-purple-400 bg-purple-950/70 text-purple-200 ring-2 ring-purple-400/40 shadow-lg scale-[1.02]"
+                          : "border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
                       }`}
                     >
-                      <div className="font-extrabold text-xs text-white flex items-center justify-between">
-                        <span>{preset.icon} {preset.titleAr}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">{preset.badge}</span>
+                      <span className="text-xl">✨</span>
+                      <div className="text-right">
+                        <div className="text-xs font-black text-white">ابتكار AI مخصص</div>
+                        <span className="text-[9px] text-purple-300 font-mono block">توليد فوري</span>
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-1 line-clamp-1">{preset.taglineAr}</div>
-                      <div className="mt-1.5 pt-1 border-t border-slate-800/60 flex items-center justify-between">
-                        <span className="text-[9px] text-slate-500 font-mono">{preset.turnMechanism}</span>
-                        <a
-                          href={`/studio?preset=${preset.key}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold underline flex items-center gap-0.5"
-                        >
-                          عدّل (Remix) 🎨
-                        </a>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    </button>
 
-              {/* JSON Pack Import */}
-              <div className="pt-2 border-t border-slate-800/70 flex items-center justify-between text-xs">
-                <label className="cursor-pointer text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1.5">
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                  <span>📁 استيراد حزمة من ملف JSON</span>
-                </label>
-                {selectedPackMode === "CUSTOM_IMPORT" && customImportedPack && (
-                  <span className="text-emerald-400 font-extrabold text-[11px] bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-lg truncate max-w-[180px]">
-                    ✓ {customImportedPack.themeTitle}
-                  </span>
+                    {/* JSON File Tab */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPackMode("CUSTOM_IMPORT")}
+                      className={`px-3 py-2 rounded-2xl border text-right transition-all flex items-center gap-2 whitespace-nowrap shrink-0 shadow-md ${
+                        selectedPackMode === "CUSTOM_IMPORT"
+                          ? "border-teal-400 bg-teal-950/70 text-teal-200 ring-2 ring-teal-400/40 shadow-lg scale-[1.02]"
+                          : "border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                      }`}
+                    >
+                      <span className="text-xl">📁</span>
+                      <div className="text-right">
+                        <div className="text-xs font-black text-white">استيراد JSON</div>
+                        <span className="text-[9px] text-teal-300 font-mono block">ملف خارجي</span>
+                      </div>
+                    </button>
+                  </>
                 )}
               </div>
-              {importError && (
-                <div className="text-rose-400 text-[11px] font-bold mt-1">{importError}</div>
-              )}
+
+              {/* Selected Game Card Showcase */}
+              {(() => {
+                const activeLoungeGame = JAWAKER_LOUNGE_GAMES.find((g) => g.key === selectedPackMode);
+                const activeCommunityMap = COMMUNITY_MAPS.find((m) => m.presetKey === selectedPackMode);
+
+                if (activeCommunityMap) {
+                  return (
+                    <motion.div
+                      key={activeCommunityMap.id}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-3.5 rounded-2xl border bg-gradient-to-br ${activeCommunityMap.colorScheme.bgGradient} ${activeCommunityMap.colorScheme.border} space-y-2`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl p-1.5 rounded-xl bg-slate-950/70 border border-white/10 shadow">
+                            {activeCommunityMap.presetKey === "RIYADH_VIP" ? "🏙️" : "🌐"}
+                          </span>
+                          <div>
+                            <h4 className="text-sm font-black text-white flex items-center gap-1.5">
+                              <span>{activeCommunityMap.titleAr}</span>
+                              <span className="text-[10px] text-amber-300 font-bold px-2 py-0.2 rounded-full bg-amber-500/20 border border-amber-500/30">
+                                {activeCommunityMap.creatorAr}
+                              </span>
+                            </h4>
+                            <p className="text-[11px] text-slate-300 font-bold">
+                              {activeCommunityMap.subtitleAr}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                            ⭐ {activeCommunityMap.rating}
+                          </span>
+                          <GameRulesSheet
+                            rulebookId={detectRulebookId(activeCommunityMap.pack)}
+                            variant="ghost"
+                            label="القوانين"
+                          />
+                          <a
+                            href={`/studio?preset=${activeCommunityMap.presetKey}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] font-bold text-indigo-300 hover:text-white underline underline-offset-2"
+                          >
+                            تعديل 🎨
+                          </a>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {activeCommunityMap.descriptionAr}
+                      </p>
+
+                      {/* 4 Feature Pills */}
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        {activeCommunityMap.highlights.map((feat, idx) => (
+                          <div
+                            key={idx}
+                            className="text-[10px] text-slate-200 bg-slate-950/60 border border-white/5 rounded-lg px-2 py-1 flex items-center gap-1 truncate"
+                          >
+                            <span className="text-emerald-400">✓</span>
+                            <span className="truncate">{feat}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  );
+                }
+
+                if (activeLoungeGame) {
+                  return (
+                    <motion.div
+                      key={activeLoungeGame.key}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-3.5 rounded-2xl border bg-gradient-to-br ${activeLoungeGame.colorScheme.bgGradient} ${activeLoungeGame.colorScheme.border} space-y-2`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <span className="relative block h-14 w-24 shrink-0 overflow-hidden rounded-xl border border-white/15 bg-slate-950/70 shadow">
+                            <img
+                              src={activeLoungeGame.cover}
+                              alt={activeLoungeGame.titleAr}
+                              className="h-full w-full object-cover"
+                            />
+                            <span className="absolute bottom-0.5 left-0.5 text-base leading-none drop-shadow">
+                              {activeLoungeGame.icon}
+                            </span>
+                          </span>
+                          <div>
+                            <h4 className="text-sm font-black text-white flex items-center gap-1.5">
+                              <span>{activeLoungeGame.titleAr}</span>
+                              <span className="text-[10px] text-slate-300 font-normal">
+                                ({activeLoungeGame.subtitleAr})
+                              </span>
+                            </h4>
+                            <p className="text-[11px] text-amber-300/90 font-bold">
+                              {activeLoungeGame.taglineAr}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${activeLoungeGame.colorScheme.badgeBg}`}>
+                            {activeLoungeGame.playerCount}
+                          </span>
+                          <GameRulesSheet
+                            rulebookId={detectRulebookId({ key: activeLoungeGame.key })}
+                            variant="ghost"
+                            label="القوانين"
+                          />
+                          <a
+                            href={`/studio?preset=${activeLoungeGame.key}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] font-bold text-indigo-300 hover:text-white underline underline-offset-2"
+                          >
+                            تعديل 🎨
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* 4 Feature Pills */}
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        {activeLoungeGame.features.map((feat, idx) => (
+                          <div
+                            key={idx}
+                            className="text-[10px] text-slate-200 bg-slate-950/60 border border-white/5 rounded-lg px-2 py-1 flex items-center gap-1 truncate"
+                          >
+                            <span className="text-amber-400">✓</span>
+                            <span className="truncate">{feat}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  );
+                }
+
+                if (selectedPackMode === "AI") {
+                  return (
+                    <div className="p-3.5 rounded-2xl border border-purple-500/40 bg-purple-950/40 text-right space-y-1">
+                      <div className="text-xs font-black text-purple-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                        <span>ابتكار جلسة ألعاب مخصصة بالذكاء الاصطناعي</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300">
+                        سيقوم المخرج الذكي بصياغة لوحة وبطاقات درامية حصرية مستوحاة من أسماء اللاعبين المنضمين للجلسة فور الضغط على ابدأ!
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="p-3.5 rounded-2xl border border-teal-500/40 bg-teal-950/40 text-right space-y-2">
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-teal-600/30 hover:bg-teal-600/50 border border-teal-500/50 text-teal-200 text-xs font-bold transition-colors">
+                      <input type="file" accept=".json" onChange={handleFileUpload} className="hidden" />
+                      <span>📁 اختر ملف JSON لحزمة اللعبة</span>
+                    </label>
+                    {customImportedPack && (
+                      <span className="text-emerald-400 font-extrabold text-[11px] block">
+                        ✓ تم تحميل: {customImportedPack.themeTitle}
+                      </span>
+                    )}
+                    {importError && <div className="text-rose-400 text-[11px] font-bold">{importError}</div>}
+                  </div>
+                );
+              })()}
             </div>
 
-            {/* Start Game Action */}
-            <div className="pt-3 border-t border-slate-800/80 mt-1 flex flex-col items-center gap-3">
+            {/* Start Game Actions */}
+            <div className="pt-3 border-t border-slate-800/80 mt-1 flex flex-col items-center gap-2.5">
               {isGenerating ? (
                 <div className="w-full py-5 rounded-2xl bg-purple-900/50 border border-purple-500/40 text-purple-200 flex items-center justify-center gap-3 shadow-xl animate-pulse">
                   <Sparkles className="w-6 h-6 animate-spin text-purple-300" />
@@ -886,24 +1573,52 @@ export default function SharedBoardScreen({
                 </div>
               ) : (
                 <>
+                  {/* Primary Start Game Button (With joined players) */}
                   <button
-                    disabled={playerCount < 2}
+                    disabled={playerCount < 1}
                     onClick={handleStartGame}
-                    className="w-full py-5 rounded-2xl text-xl font-black bg-gradient-to-r from-purple-600 via-indigo-600 to-amber-500 hover:from-purple-500 hover:to-amber-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xl transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 text-white"
+                    className="w-full py-4 rounded-2xl text-lg font-black bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xl transition-all transform hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2 text-slate-950"
                   >
-                    <Sparkles className="w-6 h-6 text-amber-300" />
+                    <Users className="w-5 h-5" />
                     <span>
-                      {selectedPackMode === "AI" && "ابدأ اللعبة بالذكاء الاصطناعي"}
-                      {selectedPackMode === "CUSTOM_IMPORT" && `ابدأ بالحزمة المخصصة (${customImportedPack?.themeTitle || ""})`}
+                      {selectedPackMode === "AI" && "ابدأ اللعبة مع اللاعبين (توليد AI) 👥"}
+                      {selectedPackMode === "CUSTOM_IMPORT" && `ابدأ بالحزمة المخصصة (${customImportedPack?.themeTitle || ""}) 👥`}
                       {selectedPackMode !== "AI" && selectedPackMode !== "CUSTOM_IMPORT" && (
-                        `ابدأ بـ (${FAMOUS_GAME_PRESETS.find(p => p.key === selectedPackMode)?.titleAr || selectedPackMode})`
+                        `ابدأ (${COMMUNITY_MAPS.find((m) => m.presetKey === selectedPackMode)?.titleAr || JAWAKER_LOUNGE_GAMES.find((g) => g.key === selectedPackMode)?.titleAr || selectedPackMode}) مع اللاعبين 👥`
                       )}
                     </span>
                   </button>
+
+                  {/* Instant Solo / Bot Match Launcher (Always available!) */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      sendAction?.({
+                        type: "START_DEFAULT_WITH_BOTS",
+                        presetKey:
+                          selectedPackMode !== "AI" && selectedPackMode !== "CUSTOM_IMPORT"
+                            ? selectedPackMode
+                            : "MONOPOLY_CLASSIC"
+                      })
+                    }
+                    className="w-full py-3.5 rounded-2xl text-sm font-black bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 text-slate-950 border border-amber-300/40 flex items-center justify-center gap-2 transition-all shadow-xl active:scale-95 glow-amber"
+                  >
+                    <span>
+                      🤖 تشغيل عرض تجريبي فوري مع{" "}
+                      {Math.max(3, activeGameProfile.minPlayers)} بوتات
+                    </span>
+                  </button>
+                  {botsToAdd > 0 && (
+                    <span className="text-[11px] text-amber-300/90 text-center">
+                      سيُضاف {botsToAdd} بوت تلقائياً عند البدء للوصول إلى الحد الأدنى
+                      ({activeGameProfile.minPlayers} لاعبين).
+                    </span>
+                  )}
                   {playerCount < 2 && (
-                    <p className="text-xs text-slate-500">
-                      يجب انضمام لاعبين اثنين على الأقل لبدء اللعبة
-                    </p>
+                    <span className="text-[11px] text-slate-400 text-center">
+                      يمكنك البدء الآن وسيكمل البوت الذكي العدد المطلوب، أو انتظر انضمام
+                      اللاعبين عبر الرمز.
+                    </span>
                   )}
                 </>
               )}
@@ -918,400 +1633,147 @@ export default function SharedBoardScreen({
     );
   }
 
-  const activePlayerId = gameState.turnOrder[gameState.currentTurnIndex];
-  const activePlayer = gameState.players[activePlayerId];
-
   return (
-    <div
-      dir="rtl"
-      className="w-screen h-screen bg-slate-950 text-white flex flex-col justify-between p-4 overflow-hidden select-none font-sans"
-    >
-      {/* Top HUD */}
-      <header className="h-[10vh] bg-slate-900/90 border border-slate-800 rounded-2xl px-6 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-4">
-          <div className="bg-amber-500/20 border border-amber-500/40 px-4 py-2 rounded-xl text-center">
-            <span className="text-xs text-amber-300 block">الجولة</span>
-            <span className="text-xl font-black text-amber-400">
-              {gameState.currentRound} / {gameState.maxRounds}
-            </span>
-          </div>
-          <div>
-            <div className="text-xs text-slate-400">صاحب الدور</div>
-            <div className="text-lg font-bold flex items-center gap-2">
-              <span
-                className="w-3 h-3 rounded-full inline-block"
-                style={{ backgroundColor: activePlayer?.color || "#fff" }}
-              />
-              {activePlayer?.name || "—"}
-            </div>
-          </div>
-        </div>
+    <div dir="rtl" className="w-screen h-screen overflow-hidden bg-black relative font-sans">
+      <GameTables
+        gameState={gameState}
+        sendAction={sendAction || (() => {})}
+        lastAnimation={lastAnimation}
+        visualPositions={visualPositions}
+        displayedDice={displayedDice}
+        isRollingDice={isRollingDice}
+        isSpectator={isSpectator}
+        onOpenInvite={() => setShowQRModal(true)}
+        onOpenMenu={() => setShowMenuModal(true)}
+      />
 
-        {/* Narrator Banner */}
-        <div className="flex-1 mx-6 bg-slate-950/80 border border-purple-500/30 rounded-xl px-5 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <Sparkles className="w-6 h-6 text-purple-400 shrink-0 animate-pulse" />
-            <motion.p
-              key={narratorMessage}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-base md:text-lg font-medium text-slate-100 truncate"
+      {/* ============================================================== */}
+      {/* 6. INVITE QR CODE POPUP MODAL                                  */}
+      {/* ============================================================== */}
+      <AnimatePresence>
+        {showQRModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              className="w-full max-w-sm rounded-3xl bg-slate-900 border-2 border-amber-400/80 shadow-[0_20px_50px_rgba(0,0,0,0.9)] p-6 flex flex-col items-center gap-4 text-center relative"
             >
-              {narratorMessage}
-            </motion.p>
-          </div>
-          <button
-            onClick={() => {
-              const nextState = !isVoiceEnabled;
-              setIsVoiceEnabled(nextState);
-              if (nextState) {
-                speakArabicNarrator("تم تفعيل الراوي الصوتي");
-              } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
-                window.speechSynthesis.cancel();
-              }
-            }}
-            title={isVoiceEnabled ? "تعطيل الراوي الصوتي" : "تفعيل الراوي الصوتي"}
-            className="shrink-0 p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-purple-400 text-slate-300 hover:text-white transition-colors"
-          >
-            {isVoiceEnabled ? (
-              <Volume2 className="w-5 h-5 text-purple-400" />
-            ) : (
-              <VolumeX className="w-5 h-5 text-slate-500" />
-            )}
-          </button>
-        </div>
-
-        {/* Room Code + QR */}
-        <div className="flex items-center gap-3 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-          <div className="text-left">
-            <span className="text-[11px] text-slate-400 block">رمز الغرفة</span>
-            <span className="text-lg font-black tracking-widest text-emerald-400">
-              {gameState.roomId}
-            </span>
-          </div>
-          <div className="bg-white p-1 rounded-lg">
-            <QRCodeSVG value={joinUrl} size={42} />
-          </div>
-        </div>
-      </header>
-
-      {/* Board Grid (7x5) */}
-      <main className="h-[60vh] my-1 grid grid-cols-7 grid-rows-5 gap-2.5 relative">
-        {gameState.tiles.map((tile) => {
-          const pos = getTileGridPosition(tile.index);
-          const style = TILE_STYLES[tile.tileType] || TILE_STYLES.RESOURCE;
-
-          const playersHere = Object.values(gameState.players).filter(
-            (p) => (visualPositions[p.id] ?? p.position) === tile.index
-          );
-
-          const owner = tile.ownerId ? gameState.players[tile.ownerId] : null;
-
-          return (
-            <div
-              key={tile.index}
-              style={{
-                gridRow: pos.row,
-                gridColumn: pos.col,
-                borderColor: owner ? owner.color : undefined
-              }}
-              className={`relative rounded-2xl border-2 ${style.bg} ${
-                owner ? "shadow-lg shadow-black/60 ring-1 ring-white/20" : style.border
-              } p-2 flex flex-col justify-between transition-all shadow-md overflow-hidden`}
-            >
-              {/* Owner Top Strip */}
-              {owner && (
-                <div
-                  style={{ backgroundColor: owner.color }}
-                  className="absolute top-0 inset-x-0 h-1.5 z-10"
-                />
-              )}
-
-              <div className="flex items-center justify-between z-10">
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-black/40 text-slate-300">
-                  #{tile.index} · {style.badge}
-                </span>
-                {owner ? (
-                  <span
-                    style={{ backgroundColor: owner.color }}
-                    className="text-[10px] font-black px-1.5 py-0.5 rounded text-slate-950 flex items-center gap-0.5 shadow"
-                  >
-                    👑 {owner.name}
-                  </span>
-                ) : (
-                  style.icon
-                )}
-              </div>
-
-              <div className="my-auto text-center z-10">
-                <h3 className="text-sm md:text-base font-extrabold leading-snug text-white line-clamp-2">
-                  {tile.name}
-                </h3>
-                {tile.defaultEffect && (
-                  <span
-                    className={`text-xs font-bold mt-0.5 inline-block ${
-                      tile.defaultEffect.value >= 0
-                        ? "text-emerald-400"
-                        : "text-rose-400"
-                    }`}
-                  >
-                    {tile.defaultEffect.value >= 0 ? "+" : ""}
-                    {tile.defaultEffect.value} {gameState.currencyName}
-                  </span>
-                )}
-
-                {/* Property & Rent Display */}
-                {tile.price !== undefined && (
-                  <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-amber-300 mt-0.5">
-                    <span>🏷️ {tile.price}</span>
-                    {tile.rent !== undefined && <span>🏠 {tile.rent}</span>}
-                  </div>
-                )}
-
-                {/* Armies / Territory Display */}
-                {tile.armies !== undefined && (
-                  <div className="text-[10px] font-black text-cyan-300 mt-0.5 flex items-center justify-center gap-1">
-                    <span>🛡️ {tile.armies} جيش</span>
-                  </div>
-                )}
-
-                {/* Snakes & Ladders Jump Display */}
-                {tile.jumpToIndex !== undefined && (
-                  <div
-                    className={`text-[10px] font-extrabold mt-0.5 ${
-                      tile.jumpToIndex > tile.index
-                        ? "text-emerald-300"
-                        : "text-rose-300"
-                    }`}
-                  >
-                    {tile.jumpToIndex > tile.index
-                      ? `🪜 سلم إلى #${tile.jumpToIndex}`
-                      : `🐍 ثعبان إلى #${tile.jumpToIndex}`}
-                  </div>
-                )}
-              </div>
-
-              <div className="h-8 flex items-center justify-center gap-1.5 z-20">
-                {playersHere.map((player) => (
-                  <motion.div
-                    key={player.id}
-                    layoutId={`player-token-${player.id}`}
-                    transition={{
-                      type: "spring",
-                      stiffness: 260,
-                      damping: 22
-                    }}
-                    style={{ backgroundColor: player.color }}
-                    className="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center font-black text-xs text-slate-950 relative"
-                  >
-                    {player.name.slice(0, 2)}
-                    {player.hasShield && (
-                      <Shield className="w-3.5 h-3.5 text-cyan-300 fill-cyan-500 absolute -top-1.5 -right-1.5" />
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Center Stage */}
-        <div
-          style={{ gridColumn: "2 / span 5", gridRow: "2 / span 3" }}
-          className="bg-slate-900/70 backdrop-blur-md rounded-3xl border border-slate-800/80 p-6 flex flex-col items-center justify-center relative overflow-hidden shadow-inner"
-        >
-          <AnimatePresence mode="wait">
-            {activeCardModal ? (
-              <motion.div
-                key={activeCardModal.id}
-                initial={{ scale: 0.7, opacity: 0, rotate: -3 }}
-                animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                className="max-w-lg w-full bg-gradient-to-b from-slate-800 to-slate-900 border-2 border-amber-400 rounded-3xl p-6 text-center shadow-2xl"
+              <button
+                onClick={() => setShowQRModal(false)}
+                className="absolute top-4 left-4 p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
               >
-                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-amber-500/20 text-amber-300">
-                  {activeCardModal.category === "VOTE_CARD"
-                    ? "🗳️ تصويت جماعي (15 ثانية)"
-                    : "⚡ بطاقة الذكاء الاصطناعي"}
-                </span>
-                <h2 className="text-2xl font-black text-white mt-3 mb-2">
-                  {activeCardModal.title}
-                </h2>
-                <p className="text-slate-300 text-base leading-relaxed mb-4">
-                  {activeCardModal.flavorText}
-                </p>
-                {activeCardModal.category !== "VOTE_CARD" && (
-                  <button
-                    onClick={() => setActiveCardModal(null)}
-                    className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors shadow-sm"
-                  >
-                    <FastForward className="w-3.5 h-3.5 text-amber-400" />
-                    تخطي العرض
-                  </button>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="action-stage"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center text-center"
-              >
-                {/* Dynamically render center icon and message based on turnMechanism */}
-                {gameState.rulesConfig?.turnMechanism === "TERRITORY_COMMAND" ? (
-                  <>
-                    <motion.div
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      className="w-24 h-24 rounded-3xl bg-gradient-to-br from-red-600 to-amber-600 text-white flex items-center justify-center shadow-2xl mb-4 border-4 border-amber-300/60"
-                    >
-                      <Shield className="w-12 h-12" />
-                    </motion.div>
-                    <h2 className="text-xl font-black text-slate-100">
-                      غرفة العمليات العسكرية: دور{" "}
-                      <span style={{ color: activePlayer?.color }}>
-                        {activePlayer?.name}
-                      </span>
-                    </h2>
-                    <p className="text-sm text-amber-300/80 mt-1">
-                      اختر إقليماً للهجوم أو السيطرة من هاتفك
-                    </p>
-                  </>
-                ) : gameState.rulesConfig?.turnMechanism === "CARD_PLAY_ONLY" ? (
-                  <>
-                    <motion.div
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      className="w-24 h-24 rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-2xl mb-4 border-4 border-indigo-300/60"
-                    >
-                      <Layers className="w-12 h-12" />
-                    </motion.div>
-                    <h2 className="text-xl font-black text-slate-100">
-                      معركة الأوراق التكتيكية: دور{" "}
-                      <span style={{ color: activePlayer?.color }}>
-                        {activePlayer?.name}
-                      </span>
-                    </h2>
-                    <p className="text-sm text-indigo-300/80 mt-1">
-                      العب ورقة من يدك للتأثير على مجريات اللعبة
-                    </p>
-                  </>
-                ) : gameState.rulesConfig?.turnMechanism === "SOCIAL_DISCUSSION_VOTE" ? (
-                  <>
-                    <motion.div
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      className="w-24 h-24 rounded-3xl bg-gradient-to-br from-cyan-600 to-blue-700 text-white flex items-center justify-center shadow-2xl mb-4 border-4 border-cyan-300/60"
-                    >
-                      <Vote className="w-12 h-12" />
-                    </motion.div>
-                    <h2 className="text-xl font-black text-slate-100">
-                      مجلس الحوار والتصويت: دور{" "}
-                      <span style={{ color: activePlayer?.color }}>
-                        {activePlayer?.name}
-                      </span>
-                    </h2>
-                    <p className="text-sm text-cyan-300/80 mt-1">
-                      تناقشوا بصوت عالٍ واكشفوا المندسين!
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <motion.div
-                      key={displayedDice}
-                      initial={{ rotate: -180, scale: 0.5 }}
-                      animate={{ rotate: 0, scale: 1 }}
-                      transition={{ type: "spring", stiffness: 200 }}
-                      className="w-24 h-24 rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shadow-2xl mb-4 border-4 border-white"
-                    >
-                      {displayedDice ? (
-                        <span className="text-5xl font-black">{displayedDice}</span>
-                      ) : (
-                        <Dices className="w-12 h-12" />
-                      )}
-                    </motion.div>
-                    <h2 className="text-xl font-bold text-slate-200">
-                      دور{" "}
-                      <span style={{ color: activePlayer?.color }}>
-                        {activePlayer?.name}
-                      </span>{" "}
-                      للعب من جواله!
-                    </h2>
-                    <p className="text-sm text-slate-400 mt-1">
-                      اسحب النرد للأعلى على شاشة جوالك
-                    </p>
-                  </>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </main>
+                <X className="w-5 h-5" />
+              </button>
 
-      {/* Player Docks */}
-      <footer className="h-[16vh] grid grid-cols-4 gap-4">
-        {Object.values(gameState.players).map((player) => {
-          const isTurn = player.id === activePlayerId;
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+                <QrCode className="w-6 h-6" />
+              </div>
 
-          return (
-            <div
-              key={player.id}
-              style={{
-                borderColor: isTurn ? player.color : "rgba(51, 65, 85, 0.6)"
-              }}
-              className={`rounded-2xl bg-slate-900/90 border-2 p-3.5 flex items-center justify-between transition-all ${
-                isTurn ? "scale-[1.02] shadow-lg bg-slate-800/90" : "opacity-85"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  style={{ backgroundColor: player.color }}
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center text-slate-950 font-black text-lg shadow-md relative"
+              <div>
+                <h3 className="text-lg font-black text-white">امسح للانضمام إلى الطاولة</h3>
+                <p className="text-xs text-slate-400 mt-0.5">افتح كاميرا الجوال وشارك اللعب فوراً</p>
+              </div>
+
+              <div className="bg-white p-3 rounded-2xl shadow-inner border-4 border-amber-400">
+                <QRCodeSVG value={joinUrl} size={180} />
+              </div>
+
+              <div className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800">
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-500 block">رمز الغرفة</span>
+                  <span className="text-lg font-black tracking-widest text-emerald-400 font-mono">
+                    {gameState.roomId}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (typeof navigator !== "undefined") {
+                      navigator.clipboard.writeText(joinUrl);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2000);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1 transition"
                 >
-                  {player.name.slice(0, 2)}
-                  <span
-                    className={`w-3 h-3 rounded-full border-2 border-slate-900 absolute -bottom-1 -left-1 ${
-                      player.isConnected ? "bg-emerald-400" : "bg-rose-500"
-                    }`}
-                  />
-                </div>
-                <div>
-                  <div className="font-bold text-base flex items-center gap-1.5">
-                    {player.name}
-                    {player.hasShield && (
-                      <Shield className="w-4 h-4 text-cyan-400 fill-cyan-400/30" />
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-400 flex items-center gap-1.5">
-                    <span>المربع #{player.position}</span>
-                    {player.userId && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
-                        DNA 🧠
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLink ? "تم النسخ!" : "نسخ الرابط"}</span>
+                </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
-              <div className="text-left">
-                <div className="text-xl font-black text-amber-400 flex items-center justify-end gap-1">
-                  <span>{player.coins}</span>
-                  <Coins className="w-4 h-4" />
-                </div>
-                <div className="text-xs text-indigo-300 flex items-center justify-end gap-1 mt-1">
-                  <span>
-                    {(player as any).secretHandCount ??
-                      player.secretHand?.length ??
-                      0}{" "}
-                    بطاقات
+      {/* ============================================================== */}
+      {/* 7. SETTINGS & MENU POPUP MODAL                                 */}
+      {/* ============================================================== */}
+      <AnimatePresence>
+        {showMenuModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              className="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl p-5 flex flex-col gap-4 text-right relative"
+            >
+              <button
+                onClick={() => setShowMenuModal(false)}
+                className="absolute top-4 left-4 p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Menu className="w-5 h-5 text-amber-400" />
+                <span>خيارات المجلس</span>
+              </h3>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    const nextState = !isVoiceEnabled;
+                    setIsVoiceEnabled(nextState);
+                    if (nextState) speakArabicNarrator("تم تفعيل الراوي الصوتي");
+                  }}
+                  className="w-full p-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 flex items-center justify-between transition"
+                >
+                  <span className="text-sm font-bold text-slate-200">الراوي الصوتي التفاعلي</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${isVoiceEnabled ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-700 text-slate-400"}`}>
+                    {isVoiceEnabled ? "مفعّل" : "معطّل"}
                   </span>
-                  <Layers className="w-3.5 h-3.5" />
-                </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowMenuModal(false);
+                    sendAction?.({ type: "RESET_TO_LOBBY" });
+                  }}
+                  className="w-full p-3 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 flex items-center justify-between transition"
+                >
+                  <span className="text-sm font-bold">إنهاء الجولة والعودة للوبي</span>
+                  <RotateCcw className="w-4 h-4" />
+                </button>
               </div>
-            </div>
-          );
-        })}
-      </footer>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Host action feedback (invalid host token, wrong turn, etc.) */}
+      <AnimatePresence>
+        {errorToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.96 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-[60] max-w-[92vw] px-5 py-2.5 rounded-2xl bg-rose-950/95 border border-rose-500/60 text-rose-100 text-sm font-bold shadow-[0_12px_35px_rgba(0,0,0,0.8)] backdrop-blur-md"
+            dir="rtl"
+          >
+            {errorToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Floating Reaction Emojis Physics Container */}
       <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden">
@@ -1322,23 +1784,31 @@ export default function SharedBoardScreen({
               initial={{ opacity: 0, y: 0, scale: 0.4, x: 0 }}
               animate={{
                 opacity: [0, 1, 1, 0],
-                y: -380,
-                scale: [0.4, 1.4, 1.1],
-                x: [0, 15, -15, 0]
+                y: -440,
+                scale: [0.4, 1.35, 1.1],
+                x: [0, 18, -18, 0]
               }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 2.2, ease: "easeOut" }}
+              transition={{ duration: 3.0, ease: "easeOut" }}
               style={{
                 position: "absolute",
                 bottom: "16%",
                 left: `${r.startX}%`
               }}
-              className="flex flex-col items-center filter drop-shadow-[0_4px_14px_rgba(0,0,0,0.85)]"
+              className="flex flex-col items-center filter drop-shadow-[0_8px_25px_rgba(0,0,0,0.9)] z-50 pointer-events-none select-none"
             >
-              <span className="text-5xl select-none">{r.emoji}</span>
+              {r.text && (
+                <div className="relative mb-2 px-4 py-1.5 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 text-slate-950 font-black text-base shadow-[0_0_25px_rgba(245,158,11,0.6)] border-2 border-white animate-bounce whitespace-nowrap">
+                  <span>{r.text}</span>
+                  <div className="w-2.5 h-2.5 bg-orange-500 rotate-45 absolute -bottom-1.5 left-1/2 -translate-x-1/2 border-r border-b border-white" />
+                </div>
+              )}
+              <span className="text-6xl select-none filter drop-shadow-[0_4px_14px_rgba(0,0,0,0.85)] animate-pulse">
+                {r.emoji}
+              </span>
               <span
                 style={{ backgroundColor: r.playerColor }}
-                className="mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-black text-slate-950 shadow-lg"
+                className="mt-1.5 px-3 py-0.5 rounded-full text-[11px] font-black text-slate-950 shadow-xl border border-white/60"
               >
                 {r.playerName}
               </span>

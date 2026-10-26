@@ -491,15 +491,13 @@ async function runAllTests() {
     const titlesOverwrite = (room as any).generateEndGameTitles();
     assert(titlesOverwrite["u1"].title === "الثعلب الماكر 🦊", "Titles keyed by player ID correctly documents that thief overwrites richest when 1 player leads both");
 
-    // 5.4 Test Game Over trigger via round limit
-    console.log("Testing Game Over transition via round limit...");
-    room.state.maxRounds = 2;
-    room.state.currentRound = 2;
-    room.state.currentTurnIndex = 3; // last player in turnOrder (u4)
+    // 5.4 Test Game Over trigger via authentic victory condition
+    console.log("Testing Game Over transition via authentic victory condition...");
+    room.state.winCondition = "FIRST_TO_FINISH";
+    room.state.players["u1"].position = room.state.boardSize - 1;
 
-    // Advancing turn when at maxRounds and wrapping to index 0 triggers endGame
     (room as any).advanceTurn();
-    assert((room.state.phase as string) === "GAME_OVER", "Phase transitioned to GAME_OVER when currentRound exceeds maxRounds");
+    assert((room.state.phase as string) === "GAME_OVER", "Phase transitioned to GAME_OVER when authentic victory condition is met");
     assert(broadcasts.some(b => b.event === "GAME_OVER"), "GAME_OVER event was broadcasted with winner and titles");
   }
 

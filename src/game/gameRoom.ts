@@ -1,5 +1,15 @@
-import type { GeneratedSessionPack, BoardTile, GameCard, GameSettings, WinCondition, GameArchetype, GameRulesConfig } from "./schema";
+import type {
+  GeneratedSessionPack,
+  BoardTile,
+  GameCard,
+  GameSettings,
+  WinCondition,
+  GameArchetype,
+  GameRulesConfig,
+  PlayMode
+} from "./schema";
 import { GameSettingsSchema } from "./schema";
+import { applyThemeToGamePack } from "./themeRegistry";
 import {
   type GameRoomState,
   type PlayerState,
@@ -8,21 +18,185 @@ import {
 } from "./effectEngine";
 import { recordUserActionInStore, finalizeGameForUsers, type PlayerBehavioralDNA } from "./behavioralDNA";
 import { getUserByIdSync } from "./userStore";
+import {
+  type UnoState,
+  type UnoActiveColor,
+  type UnoCard,
+  type UnoSanitizedState
+} from "./unoEngine";
+import {
+  type LudoState,
+  type LudoPlayerTokens,
+  type LudoToken,
+  type LudoMoveResult
+} from "./ludoEngine";
+import {
+  GameEngineRegistry,
+  type IGameEngine,
+  type GameType,
+  type EngineContext
+} from "./engines";
+import { MAX_PLAYERS_GLOBAL } from "./gameProfiles";
 
-export type { GeneratedSessionPack as SessionPack, BoardTile, GameCard, GameSettings, WinCondition, GameArchetype, GameRulesConfig };
+export type {
+  GeneratedSessionPack as SessionPack,
+  BoardTile,
+  GameCard,
+  GameSettings,
+  WinCondition,
+  GameArchetype,
+  GameRulesConfig
+};
+export type { UnoState, UnoActiveColor, UnoCard, UnoSanitizedState };
+export type { LudoState, LudoPlayerTokens, LudoToken, LudoMoveResult };
 
 export type RoomPhase =
   | "LOBBY"
   | "TURN_START"
   | "RESOLVING_TILE"
   | "VOTING"
+  | "SOCIAL_PHASE"
   | "GAME_OVER";
+
+// ==========================================
+// حالة استراتيجية الأقاليم (غزو العالم / Risk)
+// ==========================================
+export interface TerritoryBattle {
+  attackerId: string;
+  defenderId: string;
+  tileIndex: number;
+  attackerRolls: number[];
+  defenderRolls: number[];
+  attackerWins: boolean;
+  captured: boolean;
+  /** خسائر المدافع في مقارنات النرد (كتائب). */
+  defenderLosses?: number;
+  /** خسائر المهاجم في مقارنات النرد (كتائب). */
+  attackerLosses?: number;
+  /** كلفة الخسائر المخصومة من احتياط المهاجم. */
+  casualtyCost?: number;
+  messageAr: string;
+}
+
+export interface TerritoryState {
+  actionsLeft: number;
+  activePlayerId?: string;
+  turnIncome: number;
+  turnNumber: number;
+  lastSettledPlayerId?: string;
+  lastBattle?: TerritoryBattle;
+}
+
+// ==========================================
+// حالة المافيا والجاسوس (Social Deduction)
+// ==========================================
+export type MafiaRole = "MAFIA" | "DETECTIVE" | "CITIZEN";
+export type MafiaPhase = "ROLE_REVEAL" | "NIGHT" | "DAY" | "VOTE" | "RESOLUTION";
+
+export interface MafiaElimination {
+  playerId: string;
+  role: MafiaRole;
+  day: number;
+  reason: "NIGHT" | "VOTE";
+}
+
+export interface MafiaState {
+  phase: MafiaPhase;
+  day: number;
+  /** تُخفى من العملاء قبل الإرسال، ويُرسل لكل لاعب دوره فقط في myRole. */
+  roles: Record<string, MafiaRole>;
+  myRole?: MafiaRole;
+  /** يعرض فقط للاعب المافيا: بقية أفراد العصابة. */
+  myMafiaAllies?: string[];
+  nightVictimId?: string;
+  nightActorsReady?: string[];
+  detectiveResult?: { detectiveId: string; targetId: string; isMafia: boolean };
+  votes: Record<string, string>;
+  votesCount?: number;
+  votedBy?: string[];
+  eliminated: MafiaElimination[];
+  deadline?: number;
+  phaseDurationMs?: number;
+  lastSummary?: string;
+}
+
+// ==========================================
+// حالة كونكت فور (Connect Four)
+// ==========================================
+export interface ConnectFourMove {
+  playerId: string;
+  row: number;
+  col: number;
+}
+
+export interface ConnectFourState {
+  /** 6 صفوف × 7 أعمدة — القيمة هي معرف اللاعب أو null. */
+  board: (string | null)[][];
+  lastMove?: ConnectFourMove;
+  winningCells?: Array<{ row: number; col: number }>;
+  moveCount: number;
+}
+
+// ==========================================
+// حالة الضامة / الداما (Checkers)
+// ==========================================
+export interface CheckersPiece {
+  playerId: string;
+  king: boolean;
+}
+
+export interface CheckersMove {
+  playerId: string;
+  from: { row: number; col: number };
+  to: { row: number; col: number };
+  captured?: { row: number; col: number };
+  promoted?: boolean;
+  chained?: boolean;
+}
+
+export interface CheckersState {
+  /** 8×8، الصف 0 في الأعلى. */
+  board: (CheckersPiece | null)[][];
+  /** لاعب الصفوف العليا (يتحرك نزولاً) ولاعب الصفوف السفلى (يتحرك صعوداً). */
+  topPlayerId: string;
+  bottomPlayerId: string;
+  lastMove?: CheckersMove;
+  /** قطعة يجب أن تكمل سلسلة أكل قبل أن ينتقل الدور. */
+  pendingCapture?: { playerId: string; row: number; col: number };
+  moveCountWithoutCapture: number;
+}
+
+// ==========================================
+// حالة بينغو (Bingo)
+// ==========================================
+export interface BingoCardState {
+  /** 5×5 — الصفر يمثل خانة FREE في المنتصف. */
+  grid: number[][];
+  marked: boolean[][];
+  lines: number;
+  markedCount: number;
+}
+
+export interface BingoState {
+  cards: Record<string, BingoCardState>;
+  calledNumbers: number[];
+  lastCalled?: number;
+  lastCallerId?: string;
+  winnerId?: string;
+  winningLineAr?: string;
+}
 
 // توسيع حالة اللاعب لتشمل البطاقات السرية التي في يده (على جواله)
 export interface ExtendedPlayerState extends PlayerState {
   secretHand: GameCard[];
   isConnected: boolean;
   userId?: string;
+  isBot?: boolean;
+  inJail?: boolean;
+  jailTurnsRemaining?: number;
+  doublesCount?: number;
+  isBankrupt?: boolean;
+  isEliminated?: boolean;
 }
 
 // الحالة الكاملة للغرفة شاملة تعاقب الأدوار وحزمة الذكاء الاصطناعي
@@ -37,30 +211,63 @@ export interface FullRoomState extends GameRoomState {
   deck: GameCard[];
   activeVoteCard?: GameCard; // البطاقة التي يتم التصويت عليها حالياً
   settings: GameSettings;    // إعدادات الغرفة القابلة للتخصيص
+  themeId: string;           // معرف العالم والثيم المختار للعبة
+  themeTitle?: string;       // اسم وعنوان العالم أو الماب المختار
+  playMode: PlayMode;        // طور اللعب: وناسة وجمعة مع تلميحات ذكية أو محترفين رسمي
+  suggestedTokens?: string[];// أشكال القطع المقترحة المتوافقة مع الثيم
   archetype: GameArchetype;  // نمط اللعبة (اقتصاد، سباق، معركة، إلخ)
   rulesConfig: GameRulesConfig; // القواعد الميكانيكية للعبة
   winCondition: WinCondition;// شرط الفوز المحدد
   targetScore?: number;      // الرصيد المستهدف للفوز السريع
   midGameInterventionTriggered?: boolean; // مؤشر تدخل المخرج الذكي في منتصف اللعبة
+  unoState?: UnoState;       // حالة لعبة أونو وبطاقات التكتيك الحقيقية
+  isLudo?: boolean;          // مؤشر تفعيل نمط لودو وجاكارو المجلس
+  ludoState?: LudoState;     // حالة قطع ومسارات لودو الكلاسيكية
+  freeParkingJackpot?: number;
+  /** حالة محرك غزو الأقاليم (Risk) */
+  territoryState?: TerritoryState;
+  /** حالة محرك المافيا والجاسوس */
+  mafiaState?: MafiaState;
+  /** مفتاح اللعبة الكلاسيكية النشطة إن وُجد */
+  gameKey?: string;
+  /** حالة كونكت فور */
+  connectFourState?: ConnectFourState;
+  /** حالة الضامة */
+  checkersState?: CheckersState;
+  /** حالة بينغو */
+  bingoState?: BingoState;
+  lastDiceRoll?: {
+    dice1: number;
+    dice2: number;
+    sum: number;
+    isDoubles: boolean;
+  };
+  winner?: ExtendedPlayerState;
+  victoryReason?: string;
 }
 
-// دالة إرسال التحديثات عبر WebSockets (يتم تمريرها من Socket.io أو PartyKit)
+// دالة إرسال التحديثات عبر WebSockets
 export type BroadcastFn = (
   eventType: string,
   payload: Record<string, unknown>
 ) => void;
 
+/**
+ * آلة إدارة غرفة الألعاب (BoardGameRoomMachine)
+ * معمارية مفصولة بالكامل: تقوم بإدارة اللاعبين والجلسات وتفويض آليات اللعب للمحركات المخصصة
+ * (MonopolyEngine, LudoEngine, UnoEngine, SnakesLaddersEngine, GenericBoardEngine)
+ */
 export class BoardGameRoomMachine {
   public state: FullRoomState;
   private broadcast: BroadcastFn;
-  private voteTimer?: ReturnType<typeof setTimeout>;
+  private activeEngine: IGameEngine | null = null;
 
   constructor(
     roomId: string,
-    broadcastCallback: BroadcastFn,
+    broadcastCallback: BroadcastFn = () => {},
     customSettings?: Partial<GameSettings>
   ) {
-    this.broadcast = broadcastCallback;
+    this.broadcast = typeof broadcastCallback === "function" ? broadcastCallback : () => {};
     const settings = GameSettingsSchema.parse(customSettings || {});
     this.state = {
       roomId,
@@ -72,10 +279,12 @@ export class BoardGameRoomMachine {
       turnOrder: [],
       currentTurnIndex: 0,
       currentRound: 1,
-      maxRounds: settings.maxRounds,
+      maxRounds: settings.maxRounds ?? 999,
       tiles: [],
       deck: [],
       settings,
+      themeId: settings.themeId || "ARABIAN_MAJLIS",
+      playMode: settings.playMode || "CASUAL",
       archetype: "PARTY_ECONOMY",
       rulesConfig: {
         turnMechanism: "DICE_AND_MOVE",
@@ -88,6 +297,33 @@ export class BoardGameRoomMachine {
   }
 
   // ==========================================
+  // Engine Context & Factory Dispatch
+  // ==========================================
+
+  public getEngineContext(): EngineContext {
+    return {
+      state: this.state,
+      broadcast: this.broadcast,
+      syncState: () => this.syncState(),
+      advanceTurn: () => this.advanceTurn(),
+      endGame: (victory) => this.endGame(victory),
+      getActivePlayerId: () => this.getActivePlayerId()
+    };
+  }
+
+  public getActiveEngine(): IGameEngine {
+    const detectedType = GameEngineRegistry.detectGameType(this.state as any);
+    if (!this.activeEngine || this.activeEngine.gameType !== detectedType) {
+      this.activeEngine = GameEngineRegistry.createEngine(detectedType, this.getEngineContext());
+    }
+    return this.activeEngine;
+  }
+
+  public getGameType(): GameType {
+    return this.getActiveEngine().gameType;
+  }
+
+  // ==========================================
   // 1. إدارة انضمام اللاعبين وبدء الجلسة وإعدادات الغرفة
   // ==========================================
 
@@ -97,6 +333,14 @@ export class BoardGameRoomMachine {
     }
     const validated = GameSettingsSchema.partial().parse(newSettings);
     this.state.settings = { ...this.state.settings, ...validated };
+    if (validated.themeId !== undefined) {
+      this.state.themeId = validated.themeId;
+      this.state.settings.themeId = validated.themeId;
+    }
+    if (validated.playMode !== undefined) {
+      this.state.playMode = validated.playMode;
+      this.state.settings.playMode = validated.playMode;
+    }
     if (validated.maxRounds !== undefined) {
       this.state.maxRounds = validated.maxRounds;
     }
@@ -108,20 +352,31 @@ export class BoardGameRoomMachine {
         player.coins = validated.startingCoins;
       }
     }
-    this.broadcast("SETTINGS_UPDATED", { settings: this.state.settings });
+    this.broadcast("SETTINGS_UPDATED", {
+      settings: this.state.settings,
+      themeId: this.state.themeId,
+      playMode: this.state.playMode
+    });
     this.syncState();
   }
 
-  public joinPlayer(id: string, name: string, color: string, userId?: string): void {
+  public joinPlayer(id: string, name: string, color: string, userId?: string, isBot?: boolean): void {
     if (this.state.players[id]) {
       this.state.players[id].isConnected = true;
       if (userId) this.state.players[id].userId = userId;
+      if (isBot !== undefined) this.state.players[id].isBot = isBot;
       this.syncState();
       return;
     }
 
     if (this.state.phase !== "LOBBY") {
       throw new Error("لا يمكن انضمام لاعبين جدد بعد بدء الجلسة.");
+    }
+
+    if (Object.keys(this.state.players).length >= MAX_PLAYERS_GLOBAL) {
+      throw new Error(
+        `الغرفة ممتلئة بالكامل (${MAX_PLAYERS_GLOBAL} لاعبين). لا يمكن انضمام لاعب آخر.`
+      );
     }
 
     this.state.players[id] = {
@@ -135,6 +390,10 @@ export class BoardGameRoomMachine {
       secretHand: [],
       isConnected: true,
       userId,
+      isBot: Boolean(isBot),
+      inJail: false,
+      jailTurnsRemaining: 0,
+      doublesCount: 0,
       stats: {
         coinsStolen: 0,
         timesBetrayedBy: {},
@@ -151,44 +410,90 @@ export class BoardGameRoomMachine {
       throw new Error("يجب وجود لاعبين اثنين على الأقل لبدء اللعبة.");
     }
 
-    this.state.currencyName = pack.currencyName;
-    this.state.archetype = pack.archetype || "PARTY_ECONOMY";
-    this.state.rulesConfig = pack.rulesConfig || {
+    const roomTheme = this.state.themeId || this.state.settings?.themeId;
+    const effectiveThemeId =
+      roomTheme && roomTheme !== "ARABIAN_MAJLIS"
+        ? roomTheme
+        : pack.themeId || roomTheme || "MONOPOLY_CLASSIC";
+
+    const shouldReskin = Boolean(
+      effectiveThemeId &&
+      effectiveThemeId !== "ARABIAN_MAJLIS" &&
+      effectiveThemeId !== "MONOPOLY_CLASSIC" &&
+      effectiveThemeId !== pack.themeId
+    );
+    // Always work on a private deep copy. Preset and community-map packs are
+    // shared module-level objects; mutating their tiles (ownerId, houses) would
+    // leak a finished match into the next room that uses the same map.
+    const reskinnedPack = shouldReskin
+      ? applyThemeToGamePack(pack, effectiveThemeId)
+      : (JSON.parse(JSON.stringify(pack)) as GeneratedSessionPack);
+
+    this.state.themeId = effectiveThemeId;
+    this.state.themeTitle = reskinnedPack.themeTitle;
+    this.state.suggestedTokens = reskinnedPack.suggestedTokens;
+    this.state.currencyName = reskinnedPack.currencyName;
+    this.state.archetype = reskinnedPack.archetype || "PARTY_ECONOMY";
+    this.state.rulesConfig = reskinnedPack.rulesConfig || {
       turnMechanism: "DICE_AND_MOVE",
       cardVisibility: "SECRET_PHONE_ONLY",
       ownershipSystem: "NONE"
     };
-    this.state.winCondition = pack.winCondition || "MOST_COINS";
-    this.state.targetScore = pack.targetScore;
-    this.state.tiles = pack.tiles;
-    this.state.deck = [...pack.cardsDeck];
+    this.state.winCondition = reskinnedPack.winCondition || "MOST_COINS";
+    this.state.targetScore = reskinnedPack.targetScore;
+    this.state.tiles = reskinnedPack.tiles || [];
+    this.state.boardSize = reskinnedPack.tiles?.length || this.state.boardSize || 20;
+    this.state.deck = [...(reskinnedPack.cardsDeck || [])];
     this.state.currentRound = 1;
     this.state.currentTurnIndex = 0;
     this.state.midGameInterventionTriggered = false;
+    this.state.winner = undefined;
+    this.state.victoryReason = undefined;
+    this.state.lastDiceRoll = undefined;
+    this.state.activeVoteCard = undefined;
     this.state.phase = "TURN_START";
+    this.state.territoryState = undefined;
+    this.state.mafiaState = undefined;
+    this.state.connectFourState = undefined;
+    this.state.checkersState = undefined;
+    this.state.bingoState = undefined;
+    this.state.gameKey = reskinnedPack.key;
 
-    // توزيع بطاقات البداية على اللاعبين
+    // 1. اكتشاف نوع اللعبة وبناء المحرك المستقل الخاص بها
+    this.activeEngine?.dispose?.();
+    const gameType = GameEngineRegistry.detectGameType(reskinnedPack);
+    this.activeEngine = GameEngineRegistry.createEngine(gameType, this.getEngineContext());
+    this.activeEngine.initialize(reskinnedPack);
+
+    // محرك الأقاليم والمافيا يبدآن دورتهما الخاصة فوراً
+    if (gameType === "RISK") {
+      this.activeEngine.onTurnStart?.(this.getActivePlayerId());
+    }
+
+    // 2. توزيع بطاقات البداية على اللاعبين
     const startingHandCount = this.state.rulesConfig?.turnMechanism === "CARD_PLAY_ONLY" ? 4 : 2;
     for (const pid of this.state.turnOrder) {
       const p = this.state.players[pid];
       if (p) {
         p.secretHand = [];
-        for (let i = 0; i < startingHandCount; i++) {
-          const baseCard = this.drawCardByCategory("SECRET_HAND") || this.state.deck[i % Math.max(1, this.state.deck.length)];
-          if (baseCard) {
-            p.secretHand.push({
-              ...baseCard,
-              id: `${baseCard.id}_deal_${pid}_${i}`
-            });
+        if (this.state.deck.length > 0) {
+          for (let i = 0; i < startingHandCount; i++) {
+            const baseCard = this.drawCardByCategory("SECRET_HAND") || this.state.deck[i % Math.max(1, this.state.deck.length)];
+            if (baseCard) {
+              p.secretHand.push({
+                ...baseCard,
+                id: `${baseCard.id}_deal_${pid}_${i}`
+              });
+            }
           }
         }
       }
     }
 
     this.broadcast("GAME_STARTED", {
-      themeTitle: pack.themeTitle,
-      visualStyle: pack.visualStyle,
-      narratorIntro: pack.narratorIntro,
+      themeTitle: reskinnedPack.themeTitle,
+      visualStyle: reskinnedPack.visualStyle,
+      narratorIntro: reskinnedPack.narratorIntro,
       activePlayerId: this.getActivePlayerId()
     });
 
@@ -234,7 +539,7 @@ export class BoardGameRoomMachine {
   }
 
   // ==========================================
-  // 2. استخدام البطاقات السرية من شاشة الجوال
+  // 2. استخدام البطاقات السرية
   // ==========================================
 
   public playSecretCard(
@@ -278,8 +583,23 @@ export class BoardGameRoomMachine {
   }
 
   // ==========================================
-  // 2b. شراء العقارات وقيادة الأقاليم
+  // 3. تفويض الإجراءات لمحركات الألعاب المستقلة
   // ==========================================
+
+  public rollDiceAndMove(playerId: string): void {
+    this.assertActiveTurn(playerId, "TURN_START");
+    const engine = this.getActiveEngine();
+    if (engine.rollDice) {
+      engine.rollDice(playerId);
+    }
+  }
+
+  public resolveLandedTile(player: ExtendedPlayerState, tile: BoardTile): void {
+    const engine = this.getActiveEngine();
+    if (engine.resolveLandedTile) {
+      engine.resolveLandedTile(player, tile);
+    }
+  }
 
   public buyProperty(playerId: string, tileIndex?: number): void {
     if (this.state.phase !== "TURN_START" && this.state.phase !== "RESOLVING_TILE") {
@@ -288,454 +608,221 @@ export class BoardGameRoomMachine {
     if (this.getActivePlayerId() !== playerId) {
       throw new Error("ليس دورك الآن!");
     }
-
-    const player = this.state.players[playerId];
-    const targetIndex = tileIndex !== undefined ? tileIndex : player.position;
-    const tile = this.state.tiles[targetIndex];
-
-    if (!tile) {
-      throw new Error("المربع المطلوب غير موجود.");
+    const engine = this.getActiveEngine();
+    if (engine.buyProperty) {
+      engine.buyProperty(playerId, tileIndex);
+    } else {
+      throw new Error("شراء العقارات غير مدعوم في هذا النمط.");
     }
+  }
 
-    const price = tile.price || 100;
-
-    if (tile.ownerId && tile.ownerId !== playerId) {
-      throw new Error("هذا العقار مملوك للاعب آخر بالفعل!");
+  public declinePurchase(playerId: string): void {
+    const engine = this.getActiveEngine();
+    if (engine.declinePurchase) {
+      engine.declinePurchase(playerId);
+    } else {
+      throw new Error("رفض الشراء غير مدعوم في هذا النمط.");
     }
-    if (tile.ownerId === playerId) {
-      throw new Error("أنت تملك هذا العقار بالفعل!");
-    }
-    if (player.coins < price) {
-      throw new Error("رصيدك لا يكفي لشراء هذا العقار!");
-    }
+  }
 
-    player.coins -= price;
-    tile.ownerId = playerId;
-    if (tile.rent === undefined) {
-      tile.rent = Math.max(10, Math.floor(price * 0.25));
+  public buildHouse(playerId: string, tileIndex: number): void {
+    if (this.state.phase !== "TURN_START" && this.state.phase !== "RESOLVING_TILE") {
+      throw new Error(`الإجراء غير مسموح في المرحلة الحالية: ${this.state.phase}`);
     }
-
-    this.broadcast("PROPERTY_BOUGHT", {
-      playerId,
-      tileIndex: targetIndex,
-      price,
-      tile,
-      messageAr: `قام ${player.name} بشراء ${tile.name} مقابل ${price} ${this.state.currencyName}!`
-    });
-
-    if (player.userId) {
-      recordUserActionInStore(player.userId, "BUY_PROPERTY", {
-        price,
-        tileIndex: targetIndex
-      });
+    if (this.getActivePlayerId() !== playerId) {
+      throw new Error("ليس دورك الآن!");
     }
+    const engine = this.getActiveEngine();
+    if (engine.buildHouse) {
+      engine.buildHouse(playerId, tileIndex);
+    } else {
+      throw new Error("تشييد المباني غير مدعوم في هذا النمط.");
+    }
+  }
 
-    this.syncState();
+  public payJailFine(playerId: string): void {
+    if (this.state.phase !== "TURN_START") {
+      throw new Error(`الإجراء غير مسموح في المرحلة الحالية: ${this.state.phase}`);
+    }
+    if (this.getActivePlayerId() !== playerId) {
+      throw new Error("ليس دورك الآن!");
+    }
+    const engine = this.getActiveEngine();
+    if (engine.payJailFine) {
+      engine.payJailFine(playerId);
+    } else {
+      throw new Error("دفع الكفالة غير مدعوم في هذا النمط.");
+    }
+  }
+
+  public moveLudoToken(playerId: string, tokenId: number): LudoMoveResult {
+    this.assertActiveTurn(playerId, "TURN_START");
+    const engine = this.getActiveEngine();
+    if (engine.moveLudoToken) {
+      return engine.moveLudoToken(playerId, tokenId);
+    }
+    throw new Error("الجلسة الحالية ليست من نمط لودو.");
+  }
+
+  public dropConnectFourPiece(playerId: string, column: number): void {
+    this.assertActiveTurn(playerId, "TURN_START");
+    const engine = this.getActiveEngine();
+    if (engine.dropConnectFourPiece) {
+      engine.dropConnectFourPiece(playerId, column);
+      return;
+    }
+    throw new Error("الجلسة الحالية ليست لعبة كونكت فور.");
+  }
+
+  public moveCheckersPiece(
+    playerId: string,
+    fromRow: number,
+    fromCol: number,
+    toRow: number,
+    toCol: number
+  ): void {
+    this.assertActiveTurn(playerId, "TURN_START");
+    const engine = this.getActiveEngine();
+    if (engine.moveCheckersPiece) {
+      engine.moveCheckersPiece(playerId, fromRow, fromCol, toRow, toCol);
+      return;
+    }
+    throw new Error("الجلسة الحالية ليست لعبة الضامة.");
+  }
+
+  public callBingoNumber(playerId: string): void {
+    this.assertActiveTurn(playerId, "TURN_START");
+    const engine = this.getActiveEngine();
+    if (engine.callBingoNumber) {
+      engine.callBingoNumber(playerId);
+      return;
+    }
+    throw new Error("الجلسة الحالية ليست لعبة بينغو.");
+  }
+
+  public playUnoCard(
+    playerId: string,
+    cardId: string,
+    chosenColor?: UnoActiveColor
+  ): void {
+    const engine = this.getActiveEngine();
+    if (engine.playUnoCard) {
+      engine.playUnoCard(playerId, cardId, chosenColor);
+    } else {
+      throw new Error("لعبة أونو غير نشطة في هذه الغرفة!");
+    }
+  }
+
+  public drawUnoCard(playerId: string): void {
+    const engine = this.getActiveEngine();
+    if (engine.drawUnoCard) {
+      engine.drawUnoCard(playerId);
+    } else {
+      throw new Error("لعبة أونو غير نشطة في هذه الغرفة!");
+    }
+  }
+
+  /** بعد سحب ورقة قابلة للعب: تمرير الدور مع الاحتفاظ بالورقة. */
+  public passUnoAfterDraw(playerId: string): void {
+    const engine = this.getActiveEngine();
+    if (engine.passUnoAfterDraw) {
+      engine.passUnoAfterDraw(playerId);
+    } else {
+      throw new Error("لعبة أونو غير نشطة في هذه الغرفة!");
+    }
+  }
+
+  public shoutUno(playerId: string): void {
+    const engine = this.getActiveEngine();
+    if (engine.shoutUno) {
+      engine.shoutUno(playerId);
+    } else {
+      throw new Error("لعبة أونو غير نشطة في هذه الغرفة!");
+    }
   }
 
   public claimOrAttackTile(playerId: string, targetTileIndex: number): void {
     this.assertActiveTurn(playerId, "TURN_START");
-    const player = this.state.players[playerId];
-    const tile = this.state.tiles[targetTileIndex];
-
-    if (!tile) {
-      throw new Error("الإقليم المطلوب غير موجود.");
-    }
-    if (tile.ownerId === playerId) {
-      throw new Error("هذا الإقليم خاضع لسيطرتك بالفعل!");
-    }
-
-    const cost = tile.price || 50;
-
-    // حالة 1: إقليم غير محتل
-    if (!tile.ownerId) {
-      if (player.coins < cost) {
-        throw new Error("رصيدك لا يكفي لفتح هذا الإقليم!");
-      }
-      player.coins -= cost;
-      tile.ownerId = playerId;
-      tile.armies = (tile.armies || 1);
-
-      this.broadcast("TERRITORY_CLAIMED", {
-        playerId,
-        targetTileIndex,
-        tile,
-        messageAr: `فرض ${player.name} سيطرته على إقليم ${tile.name}!`
-      });
-    } else {
-      // حالة 2: إقليم مملوك لخصم
-      const defenderId = tile.ownerId;
-      const defender = this.state.players[defenderId];
-      const currentArmies = tile.armies || 1;
-
-      if (currentArmies > 1) {
-        tile.armies = currentArmies - 1;
-        this.broadcast("TERRITORY_DEFENDED", {
-          attackerId: playerId,
-          defenderId,
-          targetTileIndex,
-          remainingArmies: tile.armies,
-          messageAr: `هاجم ${player.name} إقليم ${tile.name} لكن دفاعات ${defender?.name || "الخصم"} صمدت (الجيوش المتبقية: ${tile.armies})!`
-        });
-      } else {
-        // تم الاجتياح والسيطرة!
-        tile.ownerId = playerId;
-        tile.armies = 1;
-        this.broadcast("TERRITORY_CONQUERED", {
-          attackerId: playerId,
-          defenderId,
-          targetTileIndex,
-          tile,
-          messageAr: `اجتاح ${player.name} إقليم ${tile.name} وانتزعه من ${defender?.name || "الخصم"}!`
-        });
-      }
-    }
-
-    if (player.userId) {
-      recordUserActionInStore(player.userId, "CLAIM_OR_ATTACK_TILE", {
-        targetTileIndex,
-        targetPlayerId: tile.ownerId || undefined
-      });
-    }
-
-    this.syncState();
-
-    if (this.state.rulesConfig?.turnMechanism === "TERRITORY_COMMAND") {
-      this.advanceTurn();
+    const engine = this.getActiveEngine();
+    if (engine.claimOrAttackTile) {
+      engine.claimOrAttackTile(playerId, targetTileIndex);
     }
   }
-
-  // ==========================================
-  // 3. رمي النرد، الحركة، وتنفيذ حدث المربع
-  // ==========================================
-
-  public rollDiceAndMove(playerId: string): void {
-    this.assertActiveTurn(playerId, "TURN_START");
-    this.state.phase = "RESOLVING_TILE";
-
-    const player = this.state.players[playerId];
-    const diceValue = Math.floor(Math.random() * 6) + 1;
-
-    const moveEvents = executeCardEffects(
-      this.state,
-      [{ actionType: "MOVE_STEPS", targetType: "SELF", value: diceValue }],
-      { sourcePlayerId: playerId }
-    );
-
-    const landedTile = this.state.tiles[player.position];
-
-    this.broadcast("DICE_ROLLED", {
-      playerId,
-      diceValue,
-      newPosition: player.position,
-      landedTile,
-      moveEvents
-    });
-
-    this.resolveLandedTile(player, landedTile);
-  }
-
-  private resolveLandedTile(
-    player: ExtendedPlayerState,
-    tile: BoardTile
-  ): void {
-    let currentTile = tile;
-
-    // 1. Instant Jump (Snakes & Ladders)
-    if (
-      currentTile.jumpToIndex !== undefined &&
-      currentTile.jumpToIndex >= 0 &&
-      currentTile.jumpToIndex < this.state.boardSize
-    ) {
-      const destIndex = currentTile.jumpToIndex;
-      const isLadder = destIndex > currentTile.index;
-      player.position = destIndex;
-      this.broadcast("LADDER_OR_SNAKE_JUMP", {
-        playerId: player.id,
-        fromIndex: currentTile.index,
-        toIndex: destIndex,
-        isLadder,
-        messageAr: isLadder
-          ? `صعد ${player.name} سلماً سريعاً إلى المربع #${destIndex}! 🪜`
-          : `انزلق ${player.name} على ثعبان إلى المربع #${destIndex}! 🐍`
-      });
-
-      const victory = this.checkVictoryCondition();
-      if (victory.isOver) {
-        this.endGame(victory);
-        return;
-      }
-
-      currentTile = this.state.tiles[destIndex] || currentTile;
-    }
-
-    // 2. Automated Rent Collection (Monopoly-style BUY_AND_RENT)
-    if (
-      this.state.rulesConfig?.ownershipSystem === "BUY_AND_RENT" &&
-      currentTile.ownerId &&
-      currentTile.ownerId !== player.id
-    ) {
-      const owner = this.state.players[currentTile.ownerId];
-      if (owner) {
-        const rentAmount = currentTile.rent !== undefined ? currentTile.rent : Math.floor((currentTile.price || 100) * 0.25);
-        const actualRent = Math.min(player.coins, rentAmount);
-        player.coins -= actualRent;
-        owner.coins += actualRent;
-
-        this.broadcast("RENT_PAID", {
-          payerId: player.id,
-          ownerId: owner.id,
-          tileIndex: currentTile.index,
-          rent: actualRent,
-          messageAr: `دفع ${player.name} إيجاراً قدره ${actualRent} ${this.state.currencyName} إلى ${owner.name} صاحب ${currentTile.name}!`
-        });
-
-        if (owner.userId) {
-          recordUserActionInStore(owner.userId, "RENT_COLLECTED", { rent: actualRent, tenantId: player.id });
-        }
-
-        const victory = this.checkVictoryCondition();
-        if (victory.isOver) {
-          this.endGame(victory);
-          return;
-        }
-      }
-    }
-
-    let tileEvents: AnimationEvent[] = [];
-
-    switch (currentTile.tileType) {
-      case "START":
-      case "RESOURCE":
-      case "HAZARD": {
-        if (currentTile.defaultEffect) {
-          tileEvents = executeCardEffects(
-            this.state,
-            [currentTile.defaultEffect],
-            { sourcePlayerId: player.id }
-          );
-        }
-        this.broadcast("TILE_RESOLVED", { tile: currentTile, events: tileEvents });
-        this.advanceTurn();
-        break;
-      }
-
-      case "SECRET_CARD": {
-        const secretCard = this.drawCardByCategory("SECRET_HAND");
-        if (player.secretHand.length >= 4) {
-          this.broadcast("SECRET_HAND_FULL", {
-            playerId: player.id,
-            messageAr: `يد ${player.name} ممتلئة بالبطاقات السرية (الحد الأقصى 4)!`
-          });
-        } else if (secretCard) {
-          player.secretHand.push(secretCard);
-          this.broadcast("SECRET_CARD_DRAWN", {
-            playerId: player.id,
-            messageAr: `سحب ${player.name} بطاقة تكتيكية سرية إلى هاتفه!`
-          });
-        }
-        this.advanceTurn();
-        break;
-      }
-
-      case "DRAMA_EVENT": {
-        const dramaCard = this.drawCardByCategory("PUBLIC_DRAMA");
-        if (dramaCard) {
-          tileEvents = executeCardEffects(
-            this.state,
-            dramaCard.effects,
-            { sourcePlayerId: player.id }
-          );
-          this.broadcast("DRAMA_CARD_TRIGGERED", {
-            card: dramaCard,
-            events: tileEvents
-          });
-        }
-        this.advanceTurn();
-        break;
-      }
-
-      case "GLOBAL_VOTE": {
-        const voteCard = this.drawCardByCategory("VOTE_CARD");
-        if (voteCard) {
-          this.state.activeVoteCard = voteCard;
-          this.state.phase = "VOTING";
-
-          tileEvents = executeCardEffects(
-            this.state,
-            voteCard.effects,
-            { sourcePlayerId: player.id }
-          );
-
-          this.broadcast("VOTE_SESSION_STARTED", {
-            card: voteCard,
-            timeoutSeconds: 15,
-            events: tileEvents
-          });
-
-          this.voteTimer = setTimeout(() => {
-            this.finalizeVoteSession();
-          }, 15000);
-
-          this.syncState();
-        } else {
-          this.advanceTurn();
-        }
-        break;
-      }
-    }
-  }
-
-  // ==========================================
-  // 4. إدارة التصويت الجماعي (15 ثانية)
-  // ==========================================
 
   public submitPlayerVote(voterId: string, targetPlayerId: string): void {
-    if (this.state.phase !== "VOTING" || !this.state.pendingVote) {
-      throw new Error("لا يوجد تصويت نشط حالياً.");
+    const engine = this.getActiveEngine();
+    if (engine.submitPlayerVote) {
+      engine.submitPlayerVote(voterId, targetPlayerId);
     }
-    if (!this.state.players[targetPlayerId]) {
-      throw new Error("اللاعب المستهدف غير موجود.");
-    }
-
-    this.state.pendingVote.votes[voterId] = targetPlayerId;
-
-    const voter = this.state.players[voterId];
-    if (voter?.userId) {
-      recordUserActionInStore(voter.userId, "SUBMIT_VOTE", { targetPlayerId });
-    }
-
-    const connectedCount = Object.values(this.state.players).filter(
-      (p) => p.isConnected
-    ).length;
-    const votesCount = Object.keys(this.state.pendingVote.votes).length;
-
-    if (votesCount >= connectedCount) {
-      this.finalizeVoteSession();
-    } else {
-      this.syncState();
-    }
-  }
-
-  private finalizeVoteSession(): void {
-    if (this.voteTimer) {
-      clearTimeout(this.voteTimer);
-      this.voteTimer = undefined;
-    }
-
-    if (!this.state.pendingVote || !this.state.activeVoteCard) {
-      this.advanceTurn();
-      return;
-    }
-
-    const tally: Record<string, number> = {};
-    for (const votedTargetId of Object.values(this.state.pendingVote.votes)) {
-      tally[votedTargetId] = (tally[votedTargetId] || 0) + 1;
-    }
-
-    let maxVotes = -1;
-    let candidatesWithMaxVotes: string[] = [];
-
-    for (const [candidateId, count] of Object.entries(tally)) {
-      if (count > maxVotes) {
-        maxVotes = count;
-        candidatesWithMaxVotes = [candidateId];
-      } else if (count === maxVotes && maxVotes > 0) {
-        candidatesWithMaxVotes.push(candidateId);
-      }
-    }
-
-    const isTie = candidatesWithMaxVotes.length > 1;
-    let loserId = candidatesWithMaxVotes[0] || this.getActivePlayerId();
-
-    if (isTie) {
-      // Pick randomly among tied candidates
-      const randomIndex = Math.floor(Math.random() * candidatesWithMaxVotes.length);
-      loserId = candidatesWithMaxVotes[randomIndex];
-    }
-
-    const voteResolutionEvents = executeCardEffects(
-      this.state,
-      this.state.activeVoteCard.effects,
-      {
-        sourcePlayerId: this.getActivePlayerId(),
-        votedLoserId: loserId
-      }
-    );
-
-    if (isTie && voteResolutionEvents.length > 0) {
-      const loserName = this.state.players[loserId]?.name || loserId;
-      const tiedNames = candidatesWithMaxVotes.map(id => this.state.players[id]?.name || id).join(" و ");
-      voteResolutionEvents[0].messageAr = `تعادل في الأصوات بين (${tiedNames})! وقعت القرعة على ${loserName}. ${voteResolutionEvents[0].messageAr}`;
-    }
-
-    this.broadcast("VOTE_SESSION_ENDED", {
-      loserId,
-      tally,
-      isTie,
-      tiedCandidates: isTie ? candidatesWithMaxVotes : undefined,
-      events: voteResolutionEvents
-    });
-
-    this.state.activeVoteCard = undefined;
-    this.advanceTurn();
   }
 
   // ==========================================
-  // 5. تعاقب الأدوار، فحص التجميد، وإنهاء اللعبة
+  // 3.b إجراءات استراتيجية الأقاليم والمافيا
+  // ==========================================
+
+  public endTurn(playerId: string): void {
+    const engine = this.getActiveEngine();
+    if (!engine.endTurn) {
+      throw new Error("إنهاء الدور غير مدعوم في هذا النمط.");
+    }
+    if (this.state.phase !== "TURN_START") {
+      throw new Error(`الإجراء غير مسموح في المرحلة الحالية: ${this.state.phase}`);
+    }
+    engine.endTurn(playerId);
+  }
+
+  public reinforceTile(playerId: string, tileIndex: number, count = 1): void {
+    this.assertActiveTurn(playerId, "TURN_START");
+    const engine = this.getActiveEngine();
+    if (!engine.reinforceTile) {
+      throw new Error("التحصين غير مدعوم في هذا النمط.");
+    }
+    engine.reinforceTile(playerId, tileIndex, count);
+  }
+
+  public mafiaNightAction(playerId: string, targetId: string): void {
+    const engine = this.getActiveEngine();
+    if (!engine.mafiaNightAction) {
+      throw new Error("الحركة الليلية غير مدعومة في هذا النمط.");
+    }
+    engine.mafiaNightAction(playerId, targetId);
+  }
+
+  public submitMafiaVote(voterId: string, targetPlayerId: string): void {
+    const engine = this.getActiveEngine();
+    if (engine.castMafiaVote) {
+      engine.castMafiaVote(voterId, targetPlayerId);
+      return;
+    }
+    this.submitPlayerVote(voterId, targetPlayerId);
+  }
+
+  public advanceMafiaPhase(): void {
+    const engine = this.getActiveEngine();
+    if (engine.advanceMafiaPhase) {
+      engine.advanceMafiaPhase(true);
+    }
+  }
+
+  // ==========================================
+  // 4. الذكاء الاصطناعي للبوتات
+  // ==========================================
+
+  public executeBotTurn(botPlayerId: string): void {
+    const engine = this.getActiveEngine();
+    if (engine.executeBotTurn) {
+      engine.executeBotTurn(botPlayerId);
+    } else {
+      this.rollDiceAndMove(botPlayerId);
+    }
+  }
+
+  // ==========================================
+  // 5. فحص الفوز وتعاقب الأدوار
   // ==========================================
 
   public checkVictoryCondition(): { isOver: boolean; winner?: PlayerState; reasonAr: string } {
-    const players = Object.values(this.state.players);
-    if (players.length === 0) return { isOver: false, reasonAr: "" };
-
-    // 1. TARGET_SCORE Condition
-    if (this.state.winCondition === "TARGET_SCORE" && this.state.targetScore) {
-      const reachedTarget = players.find((p) => p.coins >= this.state.targetScore!);
-      if (reachedTarget) {
-        return {
-          isOver: true,
-          winner: reachedTarget,
-          reasonAr: `وصل للرصيد المستهدف (${this.state.targetScore} ${this.state.currencyName})!`
-        };
-      }
-    }
-
-    // 2. FIRST_TO_FINISH (Race condition)
-    if (this.state.winCondition === "FIRST_TO_FINISH") {
-      const reachedFinish = players.find((p) => p.position >= this.state.boardSize - 1);
-      if (reachedFinish) {
-        return {
-          isOver: true,
-          winner: reachedFinish,
-          reasonAr: `اجتاز خط النهاية أولاً بنجاح!`
-        };
-      }
-    }
-
-    // 3. LAST_SURVIVOR (Elimination)
-    if (this.state.winCondition === "LAST_SURVIVOR") {
-      const survivors = players.filter((p) => p.coins > 0);
-      if (survivors.length === 1 && players.length > 1) {
-        return {
-          isOver: true,
-          winner: survivors[0],
-          reasonAr: `الناجي الوحيد المتبقي على قيد الحياة!`
-        };
-      }
-    }
-
-    // 4. Default: MOST_COINS when rounds expire
-    if (this.state.currentRound > this.state.maxRounds) {
-      const richest = [...players].sort((a, b) => b.coins - a.coins)[0];
-      return {
-        isOver: true,
-        winner: richest,
-        reasonAr: `انتهت الجولات بأعلى رصيد (${richest?.coins} ${this.state.currencyName}).`
-      };
-    }
-
-    return { isOver: false, reasonAr: "" };
+    return this.getActiveEngine().checkVictory();
   }
 
   public advanceTurn(): void {
@@ -754,10 +841,16 @@ export class BoardGameRoomMachine {
       if (this.state.currentTurnIndex === 0) {
         this.state.currentRound += 1;
 
+        // Dynamic mid-game director intervention
+        const targetInterventionRound =
+          this.state.maxRounds && this.state.maxRounds <= 20
+            ? Math.ceil(this.state.maxRounds / 2)
+            : 5;
+
         if (
           !this.state.midGameInterventionTriggered &&
-          this.state.currentRound >= Math.ceil(this.state.maxRounds / 2) &&
-          this.state.currentRound <= this.state.maxRounds
+          this.state.currentRound >= targetInterventionRound &&
+          this.supportsDirectorIntervention()
         ) {
           this.triggerMidGameDirectorIntervention();
         }
@@ -772,6 +865,10 @@ export class BoardGameRoomMachine {
       const nextPlayerId = this.getActivePlayerId();
       const nextPlayer = this.state.players[nextPlayerId];
 
+      if (nextPlayer.isEliminated || nextPlayer.isBankrupt) {
+        continue;
+      }
+
       if (nextPlayer.skipNextTurn) {
         nextPlayer.skipNextTurn = false;
         this.broadcast("TURN_SKIPPED", {
@@ -782,6 +879,7 @@ export class BoardGameRoomMachine {
       }
 
       this.state.phase = "TURN_START";
+      this.getActiveEngine().onTurnStart?.(nextPlayer.id);
       this.broadcast("TURN_CHANGED", {
         activePlayerId: nextPlayer.id,
         currentRound: this.state.currentRound
@@ -789,6 +887,16 @@ export class BoardGameRoomMachine {
       this.syncState();
       return;
     }
+  }
+
+  /**
+   * تدخل «المخرج الذكي» يمنح بطاقة سرية، لذا يقتصر على الألعاب التي تعرض
+   * يد البطاقات السرية وتسمح بلعبها (المونوبولي واللوحات المخصصة). ألعاب
+   * المهارة والألعاب ذات الواجهات المستقلة لا تستفيد من هذه البطاقات.
+   */
+  private supportsDirectorIntervention(): boolean {
+    const gameType = this.getActiveEngine().gameType;
+    return gameType === "MONOPOLY" || gameType === "GENERIC_BOARD";
   }
 
   private triggerMidGameDirectorIntervention(): void {
@@ -868,17 +976,27 @@ export class BoardGameRoomMachine {
   private endGame(customVictory?: { winner?: PlayerState; reasonAr: string }): void {
     this.state.phase = "GAME_OVER";
 
-    const standings = Object.values(this.state.players).sort(
-      (a, b) => b.coins - a.coins
-    );
+    const allPlayers = Object.values(this.state.players);
+    const winner = customVictory?.winner;
+    // الفائز أولاً دائماً؛ بقية اللاعبين حسب الرصيد في الألعاب الاقتصادية.
+    // عند التعادل لا نتوّج أي لاعب تلقائياً.
+    const standings = [...allPlayers].sort((a, b) => {
+      if (winner) {
+        if (a.id === winner.id) return -1;
+        if (b.id === winner.id) return 1;
+      }
+      return b.coins - a.coins;
+    });
 
     // Generate end-game titles
     const titles = this.generateEndGameTitles();
-    const winner = customVictory?.winner || standings[0];
+    this.state.winner = winner as ExtendedPlayerState | undefined;
+    this.state.victoryReason = customVictory?.reasonAr;
 
     this.broadcast("GAME_OVER", {
       winner,
       victoryReason: customVictory?.reasonAr,
+      reasonAr: customVictory?.reasonAr,
       standings,
       titles
     });
@@ -887,7 +1005,7 @@ export class BoardGameRoomMachine {
       .filter((p) => p.userId)
       .map((p) => ({
         userId: p.userId!,
-        isWinner: p.id === (winner ? winner.id : standings[0]?.id),
+        isWinner: Boolean(winner && p.id === winner.id),
         finalCoins: p.coins
       }));
     if (playersToFinalize.length > 0) {
@@ -965,7 +1083,43 @@ export class BoardGameRoomMachine {
     return matchingCards[randomIndex];
   }
 
-  private syncState(): void {
+  public syncState(): void {
     this.broadcast("STATE_UPDATED", { state: this.state });
+  }
+
+  public resetToLobby(): void {
+    this.state.phase = "LOBBY";
+    this.state.currentRound = 0;
+    this.state.currentTurnIndex = 0;
+    this.state.winner = undefined;
+    this.state.victoryReason = undefined;
+    this.state.lastDiceRoll = undefined;
+    this.state.activeVoteCard = undefined;
+    this.state.unoState = undefined;
+    this.state.isLudo = false;
+    this.state.ludoState = undefined;
+    this.state.territoryState = undefined;
+    this.state.mafiaState = undefined;
+    this.state.connectFourState = undefined;
+    this.state.checkersState = undefined;
+    this.state.bingoState = undefined;
+    this.state.gameKey = undefined;
+    this.activeEngine?.dispose?.();
+    this.activeEngine = null;
+    for (const player of Object.values(this.state.players)) {
+      player.position = 0;
+      player.coins = this.state.settings.startingCoins;
+      player.hasShield = false;
+      player.skipNextTurn = false;
+      player.secretHand = [];
+      player.inJail = false;
+      player.jailTurnsRemaining = 0;
+      player.doublesCount = 0;
+      player.isBankrupt = false;
+      player.isEliminated = false;
+    }
+    this.state.freeParkingJackpot = 100;
+    this.broadcast("RESET_TO_LOBBY", {});
+    this.syncState();
   }
 }

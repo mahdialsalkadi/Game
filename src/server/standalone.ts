@@ -3,6 +3,17 @@ import { WebSocketServer, WebSocket } from "ws";
 import { BoardGameRoomMachine, FullRoomState } from "../game/gameRoom";
 import { generateAISessionPack, getDefaultSessionPack, PRESET_PACKS } from "../game/aiPackGenerator";
 import { GeneratedSessionPackSchema, type GeneratedSessionPack, type GameCard } from "../game/schema";
+import { applyThemeToGamePack } from "../game/themeRegistry";
+import { COMMUNITY_MAPS, getCommunityMapByKey } from "../game/communityMaps";
+import { getBestUnoBotMove, sanitizeUnoStateForViewer, type UnoActiveColor } from "../game/unoEngine";
+import { selectBestTokenForBot } from "../game/ludoEngine";
+import {
+  getBotName,
+  getPlayerColor,
+  resolveGameProfile,
+  MAX_PLAYERS_GLOBAL,
+  type GameProfile
+} from "../game/gameProfiles";
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 1999;
 
@@ -22,9 +33,204 @@ interface RoomInstance {
   playerPrompts: Record<string, string>;
   lastActivityAt: number;
   hostToken: string;
+  botTimer?: ReturnType<typeof setTimeout>;
+  graceTimers: Map<string, ReturnType<typeof setTimeout>>;
+  isBotTurnInProgress?: boolean;
 }
 
 const rooms = new Map<string, RoomInstance>();
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function playerCount(room: RoomInstance): number {
+  return Object.keys(room.machine.state.players).length;
+}
+
+/**
+ * ملء الغرفة بالبوتات حتى الحد الأدنى للعبة، مع احترام الحد الأقصى
+ * وعدم تجاوز سعة الألوان المتاحة.
+ */
+function fillBotsToMinimum(room: RoomInstance, profile: GameProfile): void {
+  const current = playerCount(room);
+  if (current > profile.maxPlayers) {
+    throw new Error(
+      `هذه اللعبة (${profile.labelAr}) تقبل ${profile.maxPlayers} لاعبين كحد أقصى، لكن في الغرفة ${current}.`
+    );
+  }
+
+  const target = Math.min(profile.minPlayers, profile.maxPlayers);
+  let count = current;
+  while (count < target) {
+    const botId = `bot_${count + 1}_${Date.now().toString().slice(-5)}_${Math.random()
+      .toString(36)
+      .slice(2, 5)}`;
+    room.machine.joinPlayer(
+      botId,
+      getBotName(count),
+      getPlayerColor(count),
+      undefined,
+      true
+    );
+    count += 1;
+  }
+}
+
+function fillDemoBots(room: RoomInstance, profile: GameProfile): void {
+  const current = playerCount(room);
+  if (current > profile.maxPlayers) {
+    throw new Error(
+      `هذه اللعبة (${profile.labelAr}) تقبل ${profile.maxPlayers} لاعبين كحد أقصى، لكن في الغرفة ${current}.`
+    );
+  }
+  // العرض التجريبي الفوري يبدأ بثلاثة بوتات على الأقل، أو حد اللعبة الأدنى
+  // إن كان أعلى (مثل المافيا التي تحتاج 5 لاعبين).
+  const target = Math.min(profile.maxPlayers, Math.max(3, profile.minPlayers));
+  let count = current;
+  while (count < target) {
+    const botId = `bot_${count + 1}_${Date.now().toString().slice(-5)}_${Math.random()
+      .toString(36)
+      .slice(2, 5)}`;
+    room.machine.joinPlayer(
+      botId,
+      getBotName(count),
+      getPlayerColor(count),
+      undefined,
+      true
+    );
+    count += 1;
+  }
+}
+
+const DICE_GAME_TYPES = new Set<string>([
+  "MONOPOLY",
+  "LUDO",
+  "SNAKES_AND_LADDERS"
+]);
+
+/** نوع اللعبة الحالي لتخصيص إيقاع البوت (نرد / بدون نرد). */
+function getRoomGameType(room: RoomInstance): string {
+  try {
+    return room.machine.getActiveEngine().gameType;
+  } catch {
+    return "GENERIC_BOARD";
+  }
+}
+
+async function executeBotTurnStaged(room: RoomInstance, botPlayerId: string): Promise<void> {
+  if (room.isBotTurnInProgress) return;
+  room.isBotTurnInProgress = true;
+
+  try {
+    const state = room.machine.state;
+    if (!state || state.phase !== "TURN_START") return;
+
+    const bot = state.players[botPlayerId];
+    if (!bot || (!bot.isBot && bot.isConnected)) return;
+
+    const activePlayerId = room.machine.getActivePlayerId();
+    if (activePlayerId !== botPlayerId) return;
+
+    const gameType = getRoomGameType(room);
+    const usesDice = DICE_GAME_TYPES.has(gameType);
+
+    // 1. Bot Thinking & Announcement — أسرع في الألعاب التي لا نرد فيها.
+    handleBroadcast(room, "BOT_THINKING", {
+      playerId: bot.id,
+      botName: bot.name,
+      messageAr: `${bot.name} يفكر في خطوته القادمة... 🤔`
+    });
+    await sleep(usesDice ? 1100 : 650);
+
+    // Validate turn & phase hasn't changed during sleep
+    if (!room.machine.state || room.machine.state.phase !== "TURN_START") return;
+    if (room.machine.getActivePlayerId() !== botPlayerId) return;
+
+    // 2. 3D Dice Roll Start — للألعاب التي تعتمد النرد فقط.
+    if (usesDice) {
+      handleBroadcast(room, "DICE_ROLL_START", {
+        playerId: bot.id,
+        botName: bot.name,
+        messageAr: `النرد يتدحرج الآن... 🎲`
+      });
+      await sleep(1200);
+
+      if (!room.machine.state || room.machine.state.phase !== "TURN_START") return;
+      if (room.machine.getActivePlayerId() !== botPlayerId) return;
+    }
+
+    // 3. Execute the bot move in the dedicated engine
+    room.machine.executeBotTurn(bot.id);
+
+    if (usesDice) {
+      // 4. Pawn travel & hop animation delay
+      const lastRoll = room.machine.state.lastDiceRoll?.sum || 4;
+      const pawnHopMs = Math.min(lastRoll * 220 + 700, 2600);
+      await sleep(pawnHopMs);
+
+      // 5. Post-move resolution reading delay
+      await sleep(1300);
+    } else {
+      // حركة فورية/سريعة: مهلة بسيطة لالتقاط أنيميشن القرص أو القطعة.
+      await sleep(700);
+    }
+
+  } catch (err) {
+    console.warn("[executeBotTurnStaged Error]:", err);
+  } finally {
+    room.isBotTurnInProgress = false;
+    scheduleBotTurnIfNeeded(room);
+  }
+}
+
+function scheduleBotTurnIfNeeded(room: RoomInstance) {
+  if (room.isBotTurnInProgress) return;
+
+  if (room.botTimer) {
+    clearTimeout(room.botTimer);
+    room.botTimer = undefined;
+  }
+
+  const state = room.machine.state;
+  if (!state || state.phase === "GAME_OVER" || state.phase === "LOBBY") return;
+
+  // 1. Voting phase bot auto-votes
+  if (state.phase === "VOTING" && state.pendingVote?.isActive) {
+    const unvotedBots = Object.values(state.players).filter(
+      p => p.isBot && !state.pendingVote?.votes[p.id]
+    );
+
+    if (unvotedBots.length > 0) {
+      room.botTimer = setTimeout(() => {
+        const candidateIds = Object.keys(state.players);
+        for (const bot of unvotedBots) {
+          const targets = candidateIds.filter(id => id !== bot.id);
+          const targetId = targets[Math.floor(Math.random() * targets.length)];
+          if (targetId) {
+            try {
+              room.machine.submitPlayerVote(bot.id, targetId);
+            } catch {}
+          }
+        }
+      }, 1500);
+      return;
+    }
+  }
+
+  // 2. Turn phase bot auto-play & disconnected player fallback
+  if (state.phase === "TURN_START") {
+    const activePlayerId = state.turnOrder[state.currentTurnIndex];
+    const activePlayer = state.players[activePlayerId];
+
+    if (activePlayer && (activePlayer.isBot || !activePlayer.isConnected)) {
+      const initialDelay = activePlayer.isBot ? 800 : 3000;
+      room.botTimer = setTimeout(() => {
+        executeBotTurnStaged(room, activePlayer.id).catch((err) => {
+          console.warn("[executeBotTurnStaged Error]:", err);
+        });
+      }, initialDelay);
+    }
+  }
+}
 
 function getOrCreateRoom(roomId: string, initialHostToken?: string): RoomInstance {
   let room = rooms.get(roomId);
@@ -35,7 +241,8 @@ function getOrCreateRoom(roomId: string, initialHostToken?: string): RoomInstanc
       playerPrompts: {},
       machine: null as any,
       lastActivityAt: Date.now(),
-      hostToken: initialHostToken || `ht_${Math.random().toString(36).slice(2, 12)}`
+      hostToken: initialHostToken || `ht_${Math.random().toString(36).slice(2, 12)}`,
+      graceTimers: new Map()
     };
 
     newRoom.machine = new BoardGameRoomMachine(roomId, (eventType, payload) => {
@@ -51,6 +258,7 @@ function getOrCreateRoom(roomId: string, initialHostToken?: string): RoomInstanc
 function handleBroadcast(room: RoomInstance, eventType: string, payload: Record<string, unknown>) {
   if (eventType === "STATE_UPDATED") {
     broadcastSanitizedState(room);
+    scheduleBotTurnIfNeeded(room);
     return;
   }
 
@@ -64,6 +272,8 @@ function handleBroadcast(room: RoomInstance, eventType: string, payload: Record<
       client.ws.send(message);
     }
   }
+
+  scheduleBotTurnIfNeeded(room);
 }
 
 function broadcastSanitizedState(room: RoomInstance) {
@@ -103,13 +313,41 @@ function sendSanitizedState(room: RoomInstance, client: ClientConnection) {
     })
   );
 
+  const sanitizedUnoState = rawState.unoState
+    ? sanitizeUnoStateForViewer(rawState.unoState, viewerId)
+    : undefined;
+
+  // المافيا: كل لاعب يرى دوره فقط، والأدوار تُكشف عند نهاية اللعبة.
+  const rawMafia = rawState.mafiaState;
+  const sanitizedMafiaState = rawMafia
+    ? {
+        ...rawMafia,
+        roles: rawState.phase === "GAME_OVER" ? rawMafia.roles : undefined,
+        myRole: rawMafia.roles?.[viewerId],
+        myMafiaAllies:
+          rawMafia.roles?.[viewerId] === "MAFIA"
+            ? Object.entries(rawMafia.roles)
+                .filter(([id, role]) => role === "MAFIA" && id !== viewerId)
+                .map(([id]) => id)
+            : undefined,
+        votes: undefined,
+        votesCount: Object.keys(rawMafia.votes || {}).length,
+        votedBy: Object.keys(rawMafia.votes || {}),
+        nightVictimId: rawState.phase === "GAME_OVER" ? rawMafia.nightVictimId : undefined,
+        detectiveResult:
+          rawMafia.detectiveResult?.detectiveId === viewerId ? rawMafia.detectiveResult : undefined
+      }
+    : undefined;
+
   client.ws.send(
     JSON.stringify({
       type: "STATE_SYNC",
       state: {
         ...rawState,
         deck: undefined,
-        players: sanitizedPlayers
+        players: sanitizedPlayers,
+        unoState: sanitizedUnoState,
+        mafiaState: sanitizedMafiaState
       }
     })
   );
@@ -150,8 +388,13 @@ wss.on("connection", (ws, req) => {
         isAuthorizedHost = false;
         role = "SPECTATOR";
       } else if (room.hostToken && !hostToken && !isFirstConnection) {
-        isAuthorizedHost = false;
-        role = "SPECTATOR";
+        if (roomId === "BOTS" || roomId.startsWith("DEMO_")) {
+          isAuthorizedHost = true;
+          role = "HOST";
+        } else {
+          isAuthorizedHost = false;
+          role = "SPECTATOR";
+        }
       }
     }
 
@@ -163,10 +406,20 @@ wss.on("connection", (ws, req) => {
 
     console.log(`[WS] Client connected: ${role} (${playerId}) to room [${roomId}]. Total clients: ${room.connections.size}`);
 
-    // If reconnecting player
-    if (role === "PLAYER" && room.machine.state.players[playerId]) {
-      room.machine.state.players[playerId].isConnected = true;
-      broadcastSanitizedState(room);
+    // Session Rehydration: Reconnect within grace period or back online
+    if (role === "PLAYER") {
+      const graceTimer = room.graceTimers.get(playerId);
+      if (graceTimer) {
+        clearTimeout(graceTimer);
+        room.graceTimers.delete(playerId);
+        console.log(`[WS] Player ${playerId} rehydrated session within grace period!`);
+      }
+      if (room.machine.state.players[playerId]) {
+        room.machine.state.players[playerId].isConnected = true;
+        broadcastSanitizedState(room);
+      } else {
+        sendSanitizedState(room, client);
+      }
     } else {
       sendSanitizedState(room, client);
     }
@@ -250,6 +503,11 @@ wss.on("connection", (ws, req) => {
               }
             }
 
+            const activeThemeId = room.machine.state.themeId || room.machine.state.settings?.themeId;
+            if (activeThemeId) {
+              sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+            }
+            fillBotsToMinimum(room, resolveGameProfile(undefined, sessionPack));
             room.machine.startGameWithAIPack(sessionPack);
             break;
           }
@@ -266,8 +524,27 @@ wss.on("connection", (ws, req) => {
             }
 
             let sessionPack: GeneratedSessionPack;
-            if (typeof msg.presetKey === "string" && PRESET_PACKS[msg.presetKey]) {
+            const communityMap = typeof msg.presetKey === "string" ? getCommunityMapByKey(msg.presetKey) : undefined;
+            if (communityMap) {
+              sessionPack = communityMap.pack;
+              // لا نسحق اختيار المضيف لثيم عالمي آخر؛ نطبّق ثيم الخريطة
+              // الافتراضي فقط عندما تكون الغرفة على الثيم الافتراضي.
+              const chosenTheme =
+                room.machine.state.themeId || room.machine.state.settings?.themeId;
+              if (!chosenTheme || chosenTheme === "ARABIAN_MAJLIS") {
+                room.machine.state.themeId = communityMap.themeId;
+                if (room.machine.state.settings) {
+                  room.machine.state.settings.themeId = communityMap.themeId;
+                }
+              }
+            } else if (typeof msg.presetKey === "string" && PRESET_PACKS[msg.presetKey]) {
               sessionPack = PRESET_PACKS[msg.presetKey];
+              if (msg.presetKey === "MONOPOLY_CLASSIC") {
+                room.machine.state.themeId = "MONOPOLY_CLASSIC";
+                if (room.machine.state.settings) {
+                  room.machine.state.settings.themeId = "MONOPOLY_CLASSIC";
+                }
+              }
             } else if (msg.pack) {
               const validation = GeneratedSessionPackSchema.safeParse(msg.pack);
               if (!validation.success) {
@@ -290,7 +567,137 @@ wss.on("connection", (ws, req) => {
               return;
             }
 
+            if (!communityMap && msg.presetKey !== "MONOPOLY_CLASSIC") {
+              const activeThemeId = room.machine.state.themeId || room.machine.state.settings?.themeId;
+              if (activeThemeId && activeThemeId !== "ARABIAN_MAJLIS") {
+                sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+              }
+            }
+            // خرائط المجتمع تحترم الثيم العالمي الذي اختاره المضيف أيضاً.
+            if (communityMap) {
+              const activeThemeId = room.machine.state.themeId || room.machine.state.settings?.themeId;
+              if (activeThemeId && activeThemeId !== "ARABIAN_MAJLIS" && activeThemeId !== sessionPack.themeId) {
+                sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+              }
+            }
+            fillBotsToMinimum(
+              room,
+              resolveGameProfile(
+                typeof msg.presetKey === "string" ? msg.presetKey : undefined,
+                sessionPack
+              )
+            );
             room.machine.startGameWithAIPack(sessionPack);
+            break;
+          }
+
+          case "ADD_BOT": {
+            if (client.role === "SPECTATOR" || !client.isAuthorizedHost) {
+              ws.send(
+                JSON.stringify({
+                  type: "ACTION_REJECTED",
+                  messageAr: "رمز المضيف غير مصرح به! لا تملك صلاحية إضافة بوت."
+                })
+              );
+              return;
+            }
+            const currentCount = playerCount(room);
+            if (currentCount >= MAX_PLAYERS_GLOBAL) {
+              throw new Error(
+                `الغرفة ممتلئة بالكامل (${MAX_PLAYERS_GLOBAL} لاعبين). لا يمكن إضافة المزيد من البوتات.`
+              );
+            }
+            const botName =
+              typeof msg.name === "string" ? msg.name : getBotName(currentCount);
+            const botColor =
+              typeof msg.color === "string" ? msg.color : getPlayerColor(currentCount);
+            const botId = `bot_${Date.now().toString().slice(-4)}_${Math.random()
+              .toString(36)
+              .slice(2, 6)}`;
+
+            room.machine.joinPlayer(botId, botName, botColor, undefined, true);
+            break;
+          }
+
+          case "START_DEFAULT_WITH_BOTS": {
+            if (client.role === "SPECTATOR" || !client.isAuthorizedHost) {
+              ws.send(
+                JSON.stringify({
+                  type: "ACTION_REJECTED",
+                  messageAr: "رمز المضيف غير مصرح به! لا تملك صلاحية بدء اللعبة."
+                })
+              );
+              return;
+            }
+
+            let sessionPack: GeneratedSessionPack;
+            const communityMap = typeof msg.presetKey === "string" ? getCommunityMapByKey(msg.presetKey) : undefined;
+            if (communityMap) {
+              sessionPack = communityMap.pack;
+              // لا نسحق اختيار المضيف لثيم عالمي آخر؛ نطبّق ثيم الخريطة
+              // الافتراضي فقط عندما تكون الغرفة على الثيم الافتراضي.
+              const chosenTheme =
+                room.machine.state.themeId || room.machine.state.settings?.themeId;
+              if (!chosenTheme || chosenTheme === "ARABIAN_MAJLIS") {
+                room.machine.state.themeId = communityMap.themeId;
+                if (room.machine.state.settings) {
+                  room.machine.state.settings.themeId = communityMap.themeId;
+                }
+              }
+            } else if (typeof msg.presetKey === "string" && PRESET_PACKS[msg.presetKey]) {
+              sessionPack = PRESET_PACKS[msg.presetKey];
+              if (msg.presetKey === "MONOPOLY_CLASSIC") {
+                room.machine.state.themeId = "MONOPOLY_CLASSIC";
+                if (room.machine.state.settings) {
+                  room.machine.state.settings.themeId = "MONOPOLY_CLASSIC";
+                }
+              }
+            } else {
+              const playerNames = Object.values(room.machine.state.players).map(p => p.name);
+              sessionPack = getDefaultSessionPack(playerNames);
+            }
+
+            if (!communityMap && msg.presetKey !== "MONOPOLY_CLASSIC") {
+              const activeThemeId = room.machine.state.themeId || room.machine.state.settings?.themeId;
+              if (activeThemeId && activeThemeId !== "ARABIAN_MAJLIS") {
+                sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+              }
+            }
+            // خرائط المجتمع تحترم الثيم العالمي الذي اختاره المضيف أيضاً.
+            if (communityMap) {
+              const activeThemeId = room.machine.state.themeId || room.machine.state.settings?.themeId;
+              if (activeThemeId && activeThemeId !== "ARABIAN_MAJLIS" && activeThemeId !== sessionPack.themeId) {
+                sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+              }
+            }
+            fillDemoBots(
+              room,
+              resolveGameProfile(
+                typeof msg.presetKey === "string" ? msg.presetKey : undefined,
+                sessionPack
+              )
+            );
+            room.machine.startGameWithAIPack(sessionPack);
+            scheduleBotTurnIfNeeded(room);
+            break;
+          }
+
+          case "RESET_TO_LOBBY": {
+            if (client.role === "SPECTATOR" || !client.isAuthorizedHost) {
+              ws.send(
+                JSON.stringify({
+                  type: "ACTION_REJECTED",
+                  messageAr: "رمز المضيف غير مصرح به!"
+                })
+              );
+              return;
+            }
+            if (room.botTimer) {
+              clearTimeout(room.botTimer);
+              room.botTimer = undefined;
+            }
+            room.isBotTurnInProgress = false;
+            room.machine.resetToLobby();
             break;
           }
 
@@ -299,8 +706,49 @@ wss.on("connection", (ws, req) => {
             break;
           }
 
+          case "MOVE_LUDO_TOKEN": {
+            room.machine.moveLudoToken(playerId, msg.tokenId);
+            break;
+          }
+
+          case "DROP_CONNECT_FOUR_PIECE": {
+            room.machine.dropConnectFourPiece(playerId, Number(msg.column));
+            break;
+          }
+
+          case "MOVE_CHECKERS_PIECE": {
+            room.machine.moveCheckersPiece(
+              playerId,
+              Number(msg.fromRow),
+              Number(msg.fromCol),
+              Number(msg.toRow),
+              Number(msg.toCol)
+            );
+            break;
+          }
+
+          case "CALL_BINGO_NUMBER": {
+            room.machine.callBingoNumber(playerId);
+            break;
+          }
+
           case "BUY_PROPERTY": {
             room.machine.buyProperty(playerId, msg.tileIndex);
+            break;
+          }
+
+          case "DECLINE_PURCHASE": {
+            room.machine.declinePurchase(playerId);
+            break;
+          }
+
+          case "BUILD_HOUSE": {
+            room.machine.buildHouse(playerId, msg.tileIndex);
+            break;
+          }
+
+          case "PAY_JAIL_FINE": {
+            room.machine.payJailFine(playerId);
             break;
           }
 
@@ -309,8 +757,62 @@ wss.on("connection", (ws, req) => {
             break;
           }
 
+          case "REINFORCE_TILE": {
+            room.machine.reinforceTile(playerId, msg.tileIndex, msg.count ?? 1);
+            break;
+          }
+
+          case "END_TURN": {
+            room.machine.endTurn(playerId);
+            break;
+          }
+
+          case "MAFIA_NIGHT_ACTION": {
+            room.machine.mafiaNightAction(playerId, msg.targetId);
+            break;
+          }
+
+          case "MAFIA_VOTE": {
+            room.machine.submitMafiaVote(playerId, msg.targetPlayerId);
+            break;
+          }
+
+          case "ADVANCE_MAFIA_PHASE": {
+            if (client.role === "SPECTATOR" || !client.isAuthorizedHost) {
+              ws.send(
+                JSON.stringify({
+                  type: "ACTION_REJECTED",
+                  messageAr: "رمز المضيف غير مصرح به!"
+                })
+              );
+              return;
+            }
+            room.machine.advanceMafiaPhase();
+            break;
+          }
+
           case "PLAY_SECRET_CARD": {
             room.machine.playSecretCard(playerId, msg.cardId, msg.chosenTargetId);
+            break;
+          }
+
+          case "PLAY_UNO_CARD": {
+            room.machine.playUnoCard(playerId, msg.cardId, msg.chosenColor);
+            break;
+          }
+
+          case "DRAW_UNO_CARD": {
+            room.machine.drawUnoCard(playerId);
+            break;
+          }
+
+          case "PASS_UNO_AFTER_DRAW": {
+            room.machine.passUnoAfterDraw(playerId);
+            break;
+          }
+
+          case "SHOUT_UNO": {
+            room.machine.shoutUno(playerId);
             break;
           }
 
@@ -333,7 +835,9 @@ wss.on("connection", (ws, req) => {
             const reactionMsg = JSON.stringify({
               type: "LIVE_REACTION",
               playerId,
-              emoji: msg.emoji
+              emoji: msg.emoji,
+              text: (msg as any).text,
+              voiceId: (msg as any).voiceId
             });
             for (const c of room.connections.values()) {
               if (c.ws.readyState === WebSocket.OPEN) c.ws.send(reactionMsg);
@@ -353,9 +857,36 @@ wss.on("connection", (ws, req) => {
       room.connections.delete(connId);
       room.lastActivityAt = Date.now();
       console.log(`[WS] Client disconnected: ${role} (${playerId}) from [${roomId}]`);
-      if (role === "PLAYER" && room.machine.state.players[playerId]) {
+      // A player may briefly hold two sockets during React Strict Mode mounts,
+      // a mobile wake-up, or a reconnect overlap. Only mark them offline when
+      // no other live socket for the same player remains.
+      const hasOtherPlayerSocket = Array.from(room.connections.values()).some(
+        (c) => c.role === "PLAYER" && c.playerId === playerId && c.ws.readyState === WebSocket.OPEN
+      );
+      if (role === "PLAYER" && !hasOtherPlayerSocket && room.machine.state.players[playerId]) {
+        // Mark disconnected immediately so UI updates status badge
         room.machine.state.players[playerId].isConnected = false;
         broadcastSanitizedState(room);
+
+        // Mobile Disconnect Resilience: 60-second grace period before bot auto-play takeover
+        const existingTimer = room.graceTimers.get(playerId);
+        if (existingTimer) clearTimeout(existingTimer);
+
+        const graceTimer = setTimeout(() => {
+          if (room.machine.state.players[playerId] && !room.machine.state.players[playerId].isConnected) {
+            console.log(`[WS] Player ${playerId} grace period expired.`);
+            // Auto-play via bot heuristics if current turn is stalled
+            const activePid = room.machine.getActivePlayerId();
+            if (activePid === playerId && room.machine.state.phase === "TURN_START") {
+              try {
+                executeBotTurnStaged(room, playerId).catch(() => {});
+              } catch {}
+            }
+          }
+          room.graceTimers.delete(playerId);
+        }, 60000);
+
+        room.graceTimers.set(playerId, graceTimer);
       }
     });
 

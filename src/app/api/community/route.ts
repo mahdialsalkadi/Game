@@ -5,7 +5,8 @@ import {
   getUserGames,
   remixCommunityGame,
   recordGamePlay,
-  toggleGameLike
+  toggleGameLike,
+  unlikeGame
 } from "@/game/userStore";
 
 export async function GET(request: Request) {
@@ -38,7 +39,14 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { authorId, pack, visibility } = body;
+    let { authorId, pack, visibility } = body;
+
+    if (!authorId) {
+      const authHeader = request.headers.get("authorization") || request.headers.get("Authorization");
+      if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
+        authorId = authHeader.slice(7).trim();
+      }
+    }
 
     if (!authorId || !pack) {
       return NextResponse.json(
@@ -69,7 +77,8 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { gameId, action, authorId } = body;
+    const { gameId, authorId } = body;
+    const action = String(body.action || "").toUpperCase();
 
     if (!gameId || !action) {
       return NextResponse.json(
@@ -80,6 +89,11 @@ export async function PUT(request: Request) {
 
     if (action === "LIKE") {
       const updated = await toggleGameLike(gameId);
+      return NextResponse.json({ success: true, game: updated });
+    }
+
+    if (action === "UNLIKE") {
+      const updated = await unlikeGame(gameId);
       return NextResponse.json({ success: true, game: updated });
     }
 

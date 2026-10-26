@@ -130,20 +130,45 @@ console.log("  Testing 2: Risk-Style TERRITORY_COMMAND...");
   machine.startGameWithAIPack(riskPack);
   assert.strictEqual(machine.state.rulesConfig.turnMechanism, "TERRITORY_COMMAND");
 
-  // Sultan (p1) claims neutral territory #2 without rolling dice
+  // Sultan (p1) claims a neutral territory without rolling dice
   assert.strictEqual(machine.getActivePlayerId(), "p1");
-  machine.claimOrAttackTile("p1", 2);
+  const neutralTile = machine.state.tiles.find((tile) => !tile.ownerId)!;
+  assert.ok(neutralTile, "The map must start with neutral territories");
+  machine.claimOrAttackTile("p1", neutralTile.index);
 
-  // Territory #2 claimed by p1
-  assert.strictEqual(machine.state.tiles[2].ownerId, "p1");
-  // Turn automatically advances after territory command!
-  assert.strictEqual(machine.getActivePlayerId(), "p2", "Turn should advance to p2 after command");
+  // Neutral territory claimed by p1
+  assert.strictEqual(machine.state.tiles[neutralTile.index].ownerId, "p1");
 
-  // Faris (p2) attacks Sultan's territory #2
-  machine.claimOrAttackTile("p2", 2);
-  // Territory #2 captured by Faris
-  assert.strictEqual(machine.state.tiles[2].ownerId, "p2");
-  assert.strictEqual(machine.getActivePlayerId(), "p1", "Turn should advance to p1");
+  // New Risk rules: a turn grants 3 command actions, so the turn stays with p1.
+  assert.strictEqual(machine.getActivePlayerId(), "p1", "Turn should remain with p1 after the first command");
+  assert.strictEqual(machine.state.territoryState?.actionsLeft, 2, "Two command actions should remain");
+
+  // Reinforce the captured territory (one more command action)
+  machine.reinforceTile("p1", neutralTile.index, 1);
+  assert.strictEqual(machine.state.tiles[neutralTile.index].armies, 2, "Reinforcement should add an army");
+  assert.strictEqual(machine.state.territoryState?.actionsLeft, 1);
+
+  // End the turn explicitly, then Faris attacks with the dice-based combat resolver.
+  machine.endTurn("p1");
+  assert.strictEqual(machine.getActivePlayerId(), "p2", "Turn should advance to p2 after ending the turn");
+
+  const p2CoinsBefore = machine.state.players["p2"].coins;
+  machine.claimOrAttackTile("p2", neutralTile.index);
+  const battle = machine.state.territoryState?.lastBattle;
+  assert.ok(battle, "An attack must produce a battle log");
+  // هجوم = 20 احتياطاً + كلفة الكتائب المهاجمة التي خسرتها مقارنات النرد،
+  // مع مكافأة غنيمة 30 عند احتلال الإقليم.
+  const expectedP2Coins =
+    p2CoinsBefore - 20 - (battle?.casualtyCost || 0) + (battle?.captured ? 30 : 0);
+  assert.strictEqual(
+    machine.state.players["p2"].coins,
+    expectedP2Coins,
+    "An attack must cost 20 reserve battalions plus any attacker casualties, and award capture loot"
+  );
+  assert.ok(
+    machine.state.tiles[neutralTile.index].ownerId === "p1" || machine.state.tiles[neutralTile.index].ownerId === "p2",
+    "The attacked territory must have a valid owner after combat"
+  );
 
   console.log("  ✅ Territory Command passed!");
 }

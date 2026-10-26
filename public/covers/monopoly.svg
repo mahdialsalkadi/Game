@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Monopoly classic cover">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b1e05"/>
+      <stop offset="0.55" stop-color="#8a4b09"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#fcd34d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.75" cy="0.25" r="0.7">
+      <stop offset="0" stop-color="#fde68a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fde68a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <rect width="640" height="360" fill="url(#glow)"/>
+  <g opacity="0.18" stroke="#fff7d6" stroke-width="1">
+    <path d="M0 60h640M0 120h640M0 180h640M0 240h640M0 300h640"/>
+    <path d="M80 0v360M160 0v360M240 0v360M320 0v360M400 0v360M480 0v360M560 0v360"/>
+  </g>
+  <g transform="translate(56 54) rotate(-7)">
+    <rect x="0" y="0" width="360" height="252" rx="18" fill="url(#board)" stroke="#7c2d12" stroke-width="7"/>
+    <rect x="18" y="18" width="324" height="216" rx="10" fill="none" stroke="#b45309" stroke-width="3"/>
+    <g stroke="#7c2d12" stroke-width="2">
+      <path d="M66 18v216M114 18v216M162 18v216M210 18v216M258 18v216M306 18v216"/>
+      <path d="M18 72h324M18 126h324M18 180h324"/>
+    </g>
+    <g>
+      <rect x="20" y="20" width="44" height="50" fill="#dc2626"/>
+      <rect x="68" y="20" width="44" height="50" fill="#f97316"/>
+      <rect x="116" y="20" width="44" height="50" fill="#facc15"/>
+      <rect x="164" y="20" width="44" height="50" fill="#22c55e"/>
+      <rect x="212" y="20" width="44" height="50" fill="#0ea5e9"/>
+      <rect x="260" y="20" width="44" height="50" fill="#6366f1"/>
+      <rect x="20" y="182" width="44" height="50" fill="#a855f7"/>
+      <rect x="68" y="182" width="44" height="50" fill="#ec4899"/>
+      <rect x="116" y="182" width="44" height="50" fill="#14b8a6"/>
+      <rect x="164" y="182" width="44" height="50" fill="#ef4444"/>
+      <rect x="212" y="182" width="44" height="50" fill="#84cc16"/>
+      <rect x="260" y="182" width="44" height="50" fill="#f59e0b"/>
+    </g>
+    <g transform="translate(122 92)">
+      <path d="M0 46 38 8l38 38v34H0z" fill="#065f46"/>
+      <rect x="28" y="52" width="20" height="28" fill="#fef3c7"/>
+      <rect x="8" y="24" width="16" height="14" fill="#fef3c7"/>
+      <rect x="52" y="24" width="16" height="14" fill="#fef3c7"/>
+      <path d="M-8 10 38-24l46 34" fill="none" stroke="#dc2626" stroke-width="9" stroke-linecap="round"/>
+    </g>
+  </g>
+  <g transform="translate(470 78)">
+    <rect x="0" y="0" width="118" height="160" rx="16" fill="#111827" stroke="#fbbf24" stroke-width="4" transform="rotate(9 59 80)"/>
+    <circle cx="59" cy="56" r="30" fill="#fbbf24" transform="rotate(9 59 80)"/>
+    <text x="59" y="68" text-anchor="middle" font-family="Georgia, serif" font-size="34" font-weight="700" fill="#111827" transform="rotate(9 59 80)">$</text>
+    <text x="59" y="118" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" letter-spacing="2" fill="#fde68a" transform="rotate(9 59 80)">BOARDWALK</text>
+    <text x="59" y="140" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#fca5a5" transform="rotate(9 59 80)">HOTEL · 400</text>
+  </g>
+  <g transform="translate(452 244) rotate(-12)">
+    <rect x="0" y="0" width="54" height="54" rx="12" fill="#fff7ed" stroke="#7c2d12" stroke-width="3"/>
+    <circle cx="17" cy="17" r="6" fill="#dc2626"/>
+    <circle cx="37" cy="17" r="6" fill="#dc2626"/>
+    <circle cx="27" cy="37" r="6" fill="#dc2626"/>
+  </g>
+</svg>

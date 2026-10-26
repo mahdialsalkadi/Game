@@ -14,7 +14,7 @@ export interface GameRoomHook {
 
 export function useGameRoom(
   roomId: string,
-  role: "HOST" | "PLAYER",
+  role: "HOST" | "PLAYER" | "SPECTATOR",
   partyHost?: string
 ): GameRoomHook {
   const socketRef = useRef<WebSocket | null>(null);
@@ -26,7 +26,7 @@ export function useGameRoom(
 
   // 1. Retrieve or create a stable playerId safely
   const [playerId, setPlayerId] = useState<string>(() => {
-    if (role === "HOST") return "HOST";
+    if (role !== "PLAYER") return "HOST";
     if (typeof window !== "undefined") {
       try {
         const storedId = localStorage.getItem("boardgame_player_id");
@@ -59,85 +59,144 @@ export function useGameRoom(
     if (!roomId) return;
     if (role === "PLAYER" && !playerId) return;
 
-    const activePlayerId = role === "HOST" ? "HOST" : playerId;
-    const hostToken =
-      role === "HOST" && typeof window !== "undefined"
-        ? sessionStorage.getItem(`host_token_${roomId}`) || ""
-        : "";
+    const activePlayerId = role === "PLAYER" ? playerId : "HOST";
+
+    // Resolve the host token synchronously, before the first socket message.
+    // The URL token is written by the home page's room-creation flow / invite
+    // links; reading it here (instead of in a later effect) prevents the first
+    // connection from creating the room with a different token and losing host
+    // control on reconnect or under React Strict Mode.
+    let hostToken = "";
+    if (role === "HOST" && typeof window !== "undefined") {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        hostToken =
+          params.get("hostToken") ||
+          params.get("token") ||
+          sessionStorage.getItem(`host_token_${roomId}`) ||
+          "";
+        if (hostToken) {
+          sessionStorage.setItem(`host_token_${roomId}`, hostToken);
+        }
+      } catch {
+        hostToken = "";
+      }
+    }
 
     // 2. Build WebSocket URL
-    const defaultHost =
-      typeof window !== "undefined"
-        ? `${window.location.hostname}:1999`
-        : "localhost:1999";
+    const rawHostname =
+      typeof window !== "undefined" ? window.location.hostname : "localhost";
+    const hostname =
+      !rawHostname || rawHostname === "0.0.0.0" ? "localhost" : rawHostname;
+    const defaultHost = `${hostname}:1999`;
     const rawHost =
       partyHost || process.env.NEXT_PUBLIC_PARTY_HOST || defaultHost;
-    const host = rawHost.replace(/^https?:\/\//, "").replace(/^wss?:\/\//, "");
+    const host = rawHost
+      .replace(/^https?:\/\//, "")
+      .replace(/^wss?:\/\//, "")
+      .replace(/\/+$/, "");
     const protocol =
       typeof window !== "undefined" && window.location.protocol === "https:"
         ? "wss"
         : "ws";
     const tokenQuery = hostToken ? `&hostToken=${encodeURIComponent(hostToken)}` : "";
-    const wsUrl = `${protocol}://${host}/party/${roomId}?role=${role}&playerId=${activePlayerId}${tokenQuery}`;
+    const socketRole = role === "SPECTATOR" ? "SPECTATOR" : role;
+    const wsUrl = `${protocol}://${host}/party/${roomId}?role=${socketRole}&playerId=${activePlayerId}${tokenQuery}`;
 
-    let ws: WebSocket;
+    let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout>;
     let isMounted = true;
 
     function connect() {
       if (!isMounted) return;
-      ws = new WebSocket(wsUrl);
-      socketRef.current = ws;
+      try {
+        ws = new WebSocket(wsUrl);
+        socketRef.current = ws;
 
-      ws.onopen = () => {
-        if (!isMounted) return;
-        setIsConnected(true);
-        console.log(`[GameRoom] Connected as ${role} (${activePlayerId}) to room ${roomId}`);
-      };
+        ws.onopen = () => {
+          if (!isMounted) return;
+          setIsConnected(true);
+          console.log(`[GameRoom] Connected as ${role} (${activePlayerId}) to room ${roomId}`);
+        };
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
 
-          if (data.type === "AI_GENERATING") {
-            setIsGeneratingAI(true);
-          } else if (data.type === "STATE_SYNC") {
-            setGameState(data.state);
-            if (data.state && data.state.phase !== "LOBBY") {
+            if (data.type === "AI_GENERATING") {
+              setIsGeneratingAI(true);
+            } else if (data.type === "STATE_SYNC") {
+              setGameState(data.state);
+              if (data.state && data.state.phase !== "LOBBY") {
+                setIsGeneratingAI(false);
+              }
+            } else if (data.type === "ACTION_REJECTED") {
               setIsGeneratingAI(false);
+              setErrorToast(data.messageAr);
+              setTimeout(() => setErrorToast(null), 3000);
+            } else {
+              // Animation events (DICE_ROLLED, DRAMA_CARD_TRIGGERED, etc.)
+              setLastAnimation(data);
             }
-          } else if (data.type === "ACTION_REJECTED") {
-            setIsGeneratingAI(false);
-            setErrorToast(data.messageAr);
-            setTimeout(() => setErrorToast(null), 3000);
-          } else {
-            // Animation events (DICE_ROLLED, DRAMA_CARD_TRIGGERED, etc.)
-            setLastAnimation(data);
+          } catch (e) {
+            console.error("[GameRoom] Failed to parse message:", e);
           }
-        } catch (e) {
-          console.error("[GameRoom] Failed to parse message:", e);
-        }
-      };
+        };
 
-      ws.onclose = () => {
+        ws.onclose = (event) => {
+          if (!isMounted) return;
+          setIsConnected(false);
+          console.warn(`[GameRoom] Disconnected (code ${event.code}). Auto-rehydrating connection in 2s...`);
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connect, 2000);
+        };
+
+        ws.onerror = () => {
+          if (!isMounted) return;
+          if (ws && (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED)) {
+            return;
+          }
+          console.warn(`[GameRoom] WebSocket connection issue to ${wsUrl}. Retrying in 2s...`);
+          try {
+            ws?.close();
+          } catch {}
+        };
+      } catch (err) {
         if (!isMounted) return;
-        setIsConnected(false);
-        console.log("[GameRoom] Disconnected. Attempting reconnect in 2s...");
+        console.warn("[GameRoom] Failed to initialize WebSocket:", err);
         reconnectTimeout = setTimeout(connect, 2000);
-      };
-
-      ws.onerror = (err) => {
-        console.error("[GameRoom] WebSocket error:", err);
-        ws.close();
-      };
+      }
     }
 
     connect();
 
+    // Mobile Disconnect Resilience: Instant Rehydration when phone screen wakes up
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        if (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED || socketRef.current.readyState === WebSocket.CLOSING) {
+          console.log("[GameRoom] Screen awakened: Rehydrating WebSocket session immediately...");
+          clearTimeout(reconnectTimeout);
+          connect();
+        }
+      }
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
     return () => {
       isMounted = false;
       clearTimeout(reconnectTimeout);
-      if (ws) ws.close();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+      if (ws) {
+        ws.onerror = null;
+        ws.onclose = null;
+        try {
+          ws.close();
+        } catch {}
+      }
     };
   }, [roomId, role, partyHost, playerId]);
 

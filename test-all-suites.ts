@@ -14,7 +14,20 @@ const suites = [
   "test-famous-presets.ts",
   "test-server-protocol.ts",
   "test-room-security.ts",
-  "test-accounts-and-dna.ts"
+  "test-accounts-and-dna.ts",
+  "test-bots-integration.ts",
+  "test-uno-authentic.ts",
+  "test-monopoly-authentic.ts",
+  "test-snakes-authentic.ts",
+  "test-ludo-authentic.ts",
+  "test-authentic-game-over.ts",
+  "test-theme-registry.ts",
+  "test-universal-reskin.ts",
+  "test-themed-audio-social.ts",
+  "test-base-community-maps.ts",
+  "test-game-profiles.ts",
+  "test-game-results.ts",
+  "test-director-intervention.ts"
 ];
 
 function checkPort(port: number): Promise<boolean> {
@@ -32,7 +45,7 @@ function checkPort(port: number): Promise<boolean> {
 
 async function main() {
   console.log("====================================================");
-  console.log("🚀 RUNNING ALL 13 REGRESSION TEST SUITES (USER ACCOUNTS, PERSISTENT AI DNA & COMMUNITY HUB)");
+  console.log(`🚀 RUNNING ALL ${suites.length} REGRESSION TEST SUITES (GAME RULES, ENGINES, PROTOCOL & UI INTEGRATION)`);
   console.log("====================================================\n");
 
   const PORT = 1999;

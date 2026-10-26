@@ -30,7 +30,7 @@ import BoardEditor from "@/components/studio/BoardEditor";
 import CardDeckEditor from "@/components/studio/CardDeckEditor";
 import GamePackExporter from "@/components/studio/GamePackExporter";
 import UserProfileModal from "@/components/profile/UserProfileModal";
-import { STUDIO_PRESETS, PRESET_PACKS } from "@/components/studio/presets";
+import { STUDIO_PRESETS, PRESET_PACKS, COMMUNITY_MAPS } from "@/components/studio/presets";
 import type { UserAccount } from "@/game/userStore";
 import type {
   GeneratedSessionPack,
@@ -53,13 +53,50 @@ function StudioContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetQuery = searchParams.get("preset");
+  const remixId = searchParams.get("remixId");
+  const gameId = searchParams.get("gameId");
+
+  const resolvePresetPack = (key: string | null | undefined) => {
+    if (!key) return undefined;
+    // خرائط المجتمع أولاً: قد تحمل نفس مفتاح حزمة قديمة في PRESET_PACKS
+    // لكن بنسخة منسّقة وأكثر ثراءً (ثيم/أسعار/نصوص).
+    const community = COMMUNITY_MAPS.find(
+      (map) => map.presetKey === key || map.id === key
+    );
+    return community?.pack || PRESET_PACKS[key];
+  };
 
   const [pack, setPack] = useState<GeneratedSessionPack>(() => {
-    if (presetQuery && PRESET_PACKS[presetQuery]) {
-      return JSON.parse(JSON.stringify(PRESET_PACKS[presetQuery]));
+    const presetPack = resolvePresetPack(presetQuery);
+    if (presetPack) {
+      return JSON.parse(JSON.stringify(presetPack));
     }
     return JSON.parse(JSON.stringify(PRESET_PACKS.MONOPOLY_CLASSIC || PRESET_PACKS.SULTANATE_MERCHANTS));
   });
+
+  /** المفتاح المختار في القائمة — لا نستنتجه من العنوان لأنه غير فريد. */
+  const [selectedPresetKey, setSelectedPresetKey] = useState<string>(() => {
+    if (!presetQuery) return "";
+    const known =
+      Boolean(PRESET_PACKS[presetQuery]) ||
+      COMMUNITY_MAPS.some((map) => map.presetKey === presetQuery || map.id === presetQuery);
+    return known ? presetQuery : "";
+  });
+
+  /** خيارات القائمة = قوالب الاستوديو + كل خرائط المجتمع غير المكررة. */
+  const presetOptions = React.useMemo(() => {
+    const options = new Map<string, { key: string; label: string }>();
+    for (const [key, item] of Object.entries(STUDIO_PRESETS)) {
+      options.set(key, { key, label: item.label });
+    }
+    for (const map of COMMUNITY_MAPS) {
+      options.set(map.presetKey, {
+        key: map.presetKey,
+        label: `🗺️ ${map.titleAr}`
+      });
+    }
+    return Array.from(options.values());
+  }, []);
 
   const [activeTab, setActiveTab] = useState<"board" | "cards" | "rules" | "export">("board");
   const [aiPrompt, setAiPrompt] = useState("");
@@ -74,10 +111,69 @@ function StudioContent() {
 
   // Sync with preset query if changed
   useEffect(() => {
-    if (presetQuery && PRESET_PACKS[presetQuery]) {
-      setPack(JSON.parse(JSON.stringify(PRESET_PACKS[presetQuery])));
+    const presetPack = resolvePresetPack(presetQuery);
+    if (presetPack) {
+      setPack(JSON.parse(JSON.stringify(presetPack)));
+      setSelectedPresetKey(presetQuery || "");
     }
   }, [presetQuery]);
+
+  // Deep links: ?remixId=<community game> or ?gameId=<saved game>
+  useEffect(() => {
+    const targetId = remixId || gameId;
+    if (!targetId) return;
+
+    let cancelled = false;
+    const loadGame = async () => {
+      try {
+        const token =
+          typeof window !== "undefined"
+            ? localStorage.getItem("boardgame_user_token")
+            : null;
+        const urls = new Set<string>(["/api/community"]);
+        if (token) {
+          urls.add(`/api/community?authorId=${encodeURIComponent(token)}`);
+        }
+
+        const responses = await Promise.all(
+          Array.from(urls).map((url) =>
+            fetch(url)
+              .then((res) => (res.ok ? res.json() : null))
+              .catch(() => null)
+          )
+        );
+
+        const games = responses.flatMap((data) =>
+          Array.isArray(data?.games) ? data.games : []
+        );
+        const match = games.find((game: { id?: string }) => game?.id === targetId);
+        if (!match?.pack || cancelled) return;
+
+        setPack(JSON.parse(JSON.stringify(match.pack)));
+        setSelectedPresetKey("");
+        setSaveStatus({
+          message:
+            remixId
+              ? "تم تحميل الحزمة بوضع الريمكس — احفظها لإنشاء نسخة خاصة بك."
+              : "تم تحميل اللعبة المحفوظة للتعديل.",
+          type: "success"
+        });
+        setTimeout(() => setSaveStatus(null), 5000);
+      } catch {
+        if (!cancelled) {
+          setSaveStatus({
+            message: "تعذر تحميل اللعبة المطلوبة — قد تكون خاصة أو محذوفة.",
+            type: "error"
+          });
+        }
+      }
+    };
+
+    loadGame();
+    return () => {
+      cancelled = true;
+    };
+  }, [remixId, gameId]);
 
   // Load user from /api/auth/me
   useEffect(() => {
@@ -116,6 +212,7 @@ function StudioContent() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
+          authorId: token,
           pack,
           visibility
         })
@@ -172,9 +269,10 @@ function StudioContent() {
   };
 
   const handleSelectPreset = (presetKey: string) => {
-    if (PRESET_PACKS[presetKey]) {
-      setPack(JSON.parse(JSON.stringify(PRESET_PACKS[presetKey])));
-    }
+    const resolved = resolvePresetPack(presetKey);
+    if (!resolved) return;
+    setPack(JSON.parse(JSON.stringify(resolved)));
+    setSelectedPresetKey(presetKey);
   };
 
   // Launch One-Click Game Room
@@ -234,11 +332,16 @@ function StudioContent() {
             <span className="text-xs text-slate-400 font-bold hidden sm:inline">القالب:</span>
             <select
               onChange={(e) => handleSelectPreset(e.target.value)}
-              value={Object.keys(PRESET_PACKS).find(k => PRESET_PACKS[k].themeTitle === pack.themeTitle) || ""}
+              value={selectedPresetKey}
               className="bg-slate-800 border border-slate-700 text-xs font-bold rounded-xl px-3 py-2 text-amber-300 outline-none focus:border-amber-400 cursor-pointer max-w-[170px] truncate"
             >
-              {Object.entries(STUDIO_PRESETS).map(([key, item]) => (
-                <option key={key} value={key}>
+              {selectedPresetKey === "" && (
+                <option value="" disabled>
+                  — حزمة محفوظة / مخصصة —
+                </option>
+              )}
+              {presetOptions.map((item) => (
+                <option key={item.key} value={item.key}>
                   {item.label}
                 </option>
               ))}

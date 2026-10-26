@@ -312,3 +312,13 @@ export async function toggleGameLike(gameId: string): Promise<SavedCustomGame | 
   persistStore();
   return game;
 }
+
+export async function unlikeGame(gameId: string): Promise<SavedCustomGame | null> {
+  loadStore();
+  const game = memoryStore.games[gameId];
+  if (!game) return null;
+
+  game.likesCount = Math.max(0, game.likesCount - 1);
+  persistStore();
+  return game;
+}

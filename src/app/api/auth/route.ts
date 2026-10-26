@@ -9,7 +9,7 @@ function sanitizeUser(user: UserAccount) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const action = body.action || "LOGIN";
+    const action = String(body.action || "LOGIN").toUpperCase();
 
     if (action === "REGISTER") {
       const { username, email, password, avatarColor } = body;
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
+        token: user.id,
         user: sanitizeUser(user)
       });
     }
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
+        token: user.id,
         user: sanitizeUser(user)
       });
     }

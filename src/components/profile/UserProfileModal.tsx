@@ -21,6 +21,7 @@ import {
   CheckCircle2
 } from "lucide-react";
 import type { UserAccount, SavedCustomGame } from "../../game/userStore";
+import { getPlayerInitials } from "../../utils/playerDisplay";
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -80,7 +81,7 @@ export default function UserProfileModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: activeTab === "LOGIN" ? "login" : "register",
+          action: activeTab === "LOGIN" ? "LOGIN" : "REGISTER",
           usernameOrEmail: activeTab === "LOGIN" ? (username || email) : undefined,
           username: activeTab === "REGISTER" ? username : undefined,
           email: activeTab === "REGISTER" ? email : undefined,
@@ -93,7 +94,8 @@ export default function UserProfileModal({
         throw new Error(data.error || "فشل تسجيل الدخول");
       }
 
-      localStorage.setItem("boardgame_user_token", data.token);
+      const authToken = data.token || data.user?.id;
+      localStorage.setItem("boardgame_user_token", authToken);
       localStorage.setItem("boardgame_user_id", data.user.id);
       setCurrentUser(data.user);
       onUserChanged?.(data.user);
@@ -163,7 +165,7 @@ export default function UserProfileModal({
                       style={{ backgroundColor: currentUser.avatarColor || "#EF4444" }}
                       className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl text-slate-950 shadow-md"
                     >
-                      {currentUser.username.slice(0, 2)}
+                      {getPlayerInitials(currentUser.username)}
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-white flex items-center gap-2">

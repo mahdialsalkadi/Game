@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Snakes and ladders cover">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#240b3d"/>
+      <stop offset="0.55" stop-color="#6d28d9"/>
+      <stop offset="1" stop-color="#db2777"/>
+    </linearGradient>
+    <radialGradient id="moon" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fdf4ff"/>
+      <stop offset="1" stop-color="#f0abfc"/>
+    </radialGradient>
+    <linearGradient id="ladder" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#b45309"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <g opacity="0.16" fill="#fff">
+    <circle cx="60" cy="60" r="2"/><circle cx="180" cy="40" r="2.5"/><circle cx="560" cy="80" r="2"/>
+    <circle cx="480" cy="34" r="2"/><circle cx="610" cy="190" r="2.5"/><circle cx="40" cy="300" r="2"/>
+  </g>
+  <circle cx="548" cy="72" r="52" fill="url(#moon)"/>
+  <circle cx="568" cy="58" r="48" fill="#6d28d9" opacity="0.85"/>
+  <g transform="translate(64 28) rotate(-4)">
+    <rect width="360" height="304" rx="20" fill="#faf5ff" stroke="#4c1d95" stroke-width="8"/>
+    <g stroke="#c4b5fd" stroke-width="1.5">
+      <path d="M36 0v284M72 0v284M108 0v284M144 0v284M180 0v284M216 0v284M252 0v284M288 0v284M324 0v284M36 0v284"/>
+      <path d="M0 28.4h344M0 56.8h344M0 85.2h344M0 113.6h344M0 142h344M0 170.4h344M0 198.8h344M0 227.2h344M0 255.6h344"/>
+    </g>
+    <g fill="#7c3aed" opacity="0.75">
+      <rect x="4" y="4" width="30" height="24" rx="5"/><rect x="40" y="32" width="30" height="24" rx="5"/>
+      <rect x="76" y="4" width="30" height="24" rx="5"/><rect x="148" y="32" width="30" height="24" rx="5"/>
+      <rect x="220" y="60" width="30" height="24" rx="5"/><rect x="292" y="88" width="30" height="24" rx="5"/>
+    </g>
+    <g stroke="url(#ladder)" stroke-width="8" stroke-linecap="round">
+      <path d="M76 268 164 172M98 284 186 188"/>
+      <path d="M76 268 98 284M100 240l22 16M124 214l22 16M148 188l22 16M172 162l22 16"/>
+      <path d="M190 260 286 132M212 276 308 148"/>
+      <path d="M190 260 212 276M214 232l22 16M238 204l22 16M262 176l22 16M286 148l22 16"/>
+    </g>
+    <path d="M330 260c-50 4-30-54-76-46-38 7-32 54-78 44-28-6-30-30-48-26" fill="none" stroke="#059669" stroke-width="17" stroke-linecap="round"/>
+    <path d="M330 260c-50 4-30-54-76-46-38 7-32 54-78 44-28-6-30-30-48-26" fill="none" stroke="#34d399" stroke-width="7" stroke-linecap="round" stroke-dasharray="3 13"/>
+    <circle cx="330" cy="260" r="15" fill="#065f46" stroke="#a7f3d0" stroke-width="3"/>
+    <circle cx="322" cy="256" r="3" fill="#fef3c7"/>
+    <g transform="translate(150 60)">
+      <circle cx="16" cy="16" r="15" fill="#f59e0b" stroke="#fff" stroke-width="3"/>
+      <circle cx="46" cy="34" r="15" fill="#ef4444" stroke="#fff" stroke-width="3"/>
+      <circle cx="16" cy="54" r="15" fill="#3b82f6" stroke="#fff" stroke-width="3"/>
+    </g>
+  </g>
+  <g transform="translate(458 202) rotate(8)">
+    <rect width="112" height="112" rx="26" fill="#fef3c7" stroke="#4c1d95" stroke-width="5"/>
+    <g fill="#7c3aed">
+      <circle cx="30" cy="30" r="9"/><circle cx="56" cy="30" r="9"/><circle cx="82" cy="30" r="9"/>
+      <circle cx="30" cy="56" r="9"/><circle cx="56" cy="56" r="9"/><circle cx="82" cy="56" r="9"/>
+      <circle cx="30" cy="82" r="9"/><circle cx="56" cy="82" r="9"/><circle cx="82" cy="82" r="9"/>
+    </g>
+    <circle cx="30" cy="30" r="4" fill="#fff"/><circle cx="82" cy="30" r="4" fill="#fff"/>
+    <circle cx="56" cy="82" r="4" fill="#f59e0b"/>
+  </g>
+</svg>

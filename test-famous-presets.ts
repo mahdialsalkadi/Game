@@ -2,11 +2,11 @@ import assert from "node:assert";
 import { PRESET_PACKS, FAMOUS_GAME_PRESETS, getMatchingPresetPack } from "./src/game/aiPackGenerator";
 import { GeneratedSessionPackSchema } from "./src/game/schema";
 
-console.log("🧪 Running 6 Famous Presets Verification Test...");
+console.log("🧪 Running 7 Famous Presets Verification Test...");
 
 // 1. Verify FAMOUS_GAME_PRESETS metadata
 assert.ok(Array.isArray(FAMOUS_GAME_PRESETS), "FAMOUS_GAME_PRESETS must be an array");
-assert.strictEqual(FAMOUS_GAME_PRESETS.length, 6, "Must have exactly 6 famous presets metadata");
+assert.strictEqual(FAMOUS_GAME_PRESETS.length, 7, "Must have exactly 7 famous presets metadata");
 
 const expectedKeys = [
   "MONOPOLY_CLASSIC",
@@ -14,16 +14,20 @@ const expectedKeys = [
   "TACTICAL_CARDS_UNO",
   "SOCIAL_MAFIA_SPY",
   "SNAKES_AND_LADDERS_RPG",
-  "SULTANATE_MERCHANTS"
+  "SULTANATE_MERCHANTS",
+  "LUDO_CLASSIC"
 ];
 
 for (const key of expectedKeys) {
   assert.ok(PRESET_PACKS[key], `PRESET_PACKS must contain ${key}`);
   const pack = PRESET_PACKS[key];
 
-  // Must pass GeneratedSessionPackSchema validation
   const validated = GeneratedSessionPackSchema.parse(pack);
-  assert.strictEqual(validated.tiles.length, 20, `${key} must have exactly 20 tiles`);
+  if (key === "SNAKES_AND_LADDERS_RPG") {
+    assert.strictEqual(validated.tiles.length, 100, `${key} must have exactly 100 tiles`);
+  } else {
+    assert.ok(validated.tiles.length >= 20, `${key} must have at least 20 tiles`);
+  }
   assert.ok(validated.cardsDeck.length >= 15, `${key} must have at least 15 cards`);
   assert.ok(validated.rulesConfig, `${key} must have rulesConfig defined`);
 
@@ -72,6 +76,12 @@ const sultanate = PRESET_PACKS.SULTANATE_MERCHANTS;
 assert.strictEqual(sultanate.rulesConfig.ownershipSystem, "BUY_AND_RENT");
 assert.strictEqual(sultanate.winCondition, "MOST_COINS");
 
+// Ludo: BOARD_RACE, DICE_AND_MOVE, FIRST_TO_FINISH
+const ludo = PRESET_PACKS.LUDO_CLASSIC;
+assert.strictEqual(ludo.archetype, "BOARD_RACE");
+assert.strictEqual(ludo.rulesConfig.turnMechanism, "DICE_AND_MOVE");
+assert.strictEqual(ludo.winCondition, "FIRST_TO_FINISH");
+
 // 3. Keyword matching in getMatchingPresetPack
 const monopolyMatch = getMatchingPresetPack("PARTY_ECONOMY", "نريد نلعب مونوبولي وعقارات");
 assert.strictEqual(monopolyMatch.rulesConfig?.ownershipSystem, "BUY_AND_RENT");
@@ -79,4 +89,7 @@ assert.strictEqual(monopolyMatch.rulesConfig?.ownershipSystem, "BUY_AND_RENT");
 const riskMatch = getMatchingPresetPack("BOARD_RACE", "حرب واحتلال دول وريسك");
 assert.strictEqual(riskMatch.rulesConfig?.turnMechanism, "TERRITORY_COMMAND");
 
-console.log("🎉 All 6 Famous Presets verified successfully!");
+const ludoMatch = getMatchingPresetPack("BOARD_RACE", "نريد نلعب لودو ستار وجاكارو");
+assert.strictEqual(ludoMatch.themeTitle, PRESET_PACKS.LUDO_CLASSIC.themeTitle);
+
+console.log("🎉 All 7 Famous Presets verified successfully!");

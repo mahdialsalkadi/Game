@@ -1,20 +1,39 @@
 import type * as Party from "partykit/server";
 import { BoardGameRoomMachine } from "../game/gameRoom";
 import type { FullRoomState } from "../game/gameRoom";
-import { generateAISessionPack, getDefaultSessionPack } from "../game/aiPackGenerator";
-import type { GeneratedSessionPack } from "../game/schema";
+import { generateAISessionPack, getDefaultSessionPack, PRESET_PACKS } from "../game/aiPackGenerator";
+import { GeneratedSessionPackSchema, type GeneratedSessionPack, type GameCard } from "../game/schema";
+import { applyThemeToGamePack } from "../game/themeRegistry";
+import { COMMUNITY_MAPS, getCommunityMapByKey } from "../game/communityMaps";
+import { sanitizeUnoStateForViewer, type UnoActiveColor } from "../game/unoEngine";
 
 // تعريف شكل الرسائل القادمة من الجوال أو الشاشة الرئيسية
 type ClientMessage =
-  | { type: "JOIN_ROOM"; name: string; color: string; promptIdea?: string }
+  | { type: "JOIN_ROOM"; name: string; color: string; promptIdea?: string; userId?: string }
+  | { type: "ADD_BOT"; name?: string; color?: string }
+  | { type: "START_DEFAULT_WITH_BOTS"; presetKey?: string }
+  | { type: "RESET_TO_LOBBY" }
   | { type: "UPDATE_SETTINGS"; settings: Record<string, unknown> }
   | { type: "START_AI_GAME"; useDefaultPack?: boolean }
+  | { type: "START_CUSTOM_GAME"; presetKey?: string; pack?: unknown }
   | { type: "ROLL_DICE" }
+  | { type: "MOVE_LUDO_TOKEN"; tokenId: number }
+  | { type: "DROP_CONNECT_FOUR_PIECE"; column: number }
+  | { type: "MOVE_CHECKERS_PIECE"; fromRow: number; fromCol: number; toRow: number; toCol: number }
+  | { type: "CALL_BINGO_NUMBER" }
+  | { type: "BUY_PROPERTY"; tileIndex?: number }
+  | { type: "BUILD_HOUSE"; tileIndex: number }
+  | { type: "PAY_JAIL_FINE" }
+  | { type: "CLAIM_OR_ATTACK_TILE"; targetTileIndex: number }
   | { type: "PLAY_SECRET_CARD"; cardId: string; chosenTargetId?: string }
+  | { type: "PLAY_UNO_CARD"; cardId: string; chosenColor?: UnoActiveColor }
+  | { type: "DRAW_UNO_CARD" }
+  | { type: "PASS_UNO_AFTER_DRAW" }
+  | { type: "SHOUT_UNO" }
   | { type: "DRAW_CARD" }
   | { type: "PASS_TURN" }
   | { type: "SUBMIT_VOTE"; targetPlayerId: string }
-  | { type: "SEND_REACTION"; emoji: string };
+  | { type: "SEND_REACTION"; emoji: string; text?: string; voiceId?: string };
 
 export default class GameRoomServer implements Party.Server {
   private machine: BoardGameRoomMachine;
@@ -132,12 +151,196 @@ export default class GameRoomServer implements Party.Server {
             }
           }
 
+          const activeThemeId = this.machine.state.themeId || this.machine.state.settings?.themeId;
+          if (activeThemeId) {
+            sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+          }
           this.machine.startGameWithAIPack(sessionPack);
+          break;
+        }
+
+        case "START_CUSTOM_GAME": {
+          let sessionPack: GeneratedSessionPack;
+          const communityMap = typeof msg.presetKey === "string" ? getCommunityMapByKey(msg.presetKey) : undefined;
+          if (communityMap) {
+            sessionPack = communityMap.pack;
+            const chosenTheme =
+              this.machine.state.themeId || this.machine.state.settings?.themeId;
+            if (!chosenTheme || chosenTheme === "ARABIAN_MAJLIS") {
+              this.machine.state.themeId = communityMap.themeId;
+              if (this.machine.state.settings) {
+                this.machine.state.settings.themeId = communityMap.themeId;
+              }
+            }
+          } else if (typeof msg.presetKey === "string" && PRESET_PACKS[msg.presetKey]) {
+            sessionPack = PRESET_PACKS[msg.presetKey];
+            if (msg.presetKey === "MONOPOLY_CLASSIC") {
+              this.machine.state.themeId = "MONOPOLY_CLASSIC";
+              if (this.machine.state.settings) {
+                this.machine.state.settings.themeId = "MONOPOLY_CLASSIC";
+              }
+            }
+          } else if (msg.pack) {
+            const validation = GeneratedSessionPackSchema.safeParse(msg.pack);
+            if (!validation.success) {
+              sender.send(
+                JSON.stringify({
+                  type: "ACTION_REJECTED",
+                  messageAr: "حزمة اللعبة المخصصة غير صالحة ولا تطابق معايير اللوحة والبطاقات!"
+                })
+              );
+              return;
+            }
+            sessionPack = validation.data;
+          } else {
+            sender.send(
+              JSON.stringify({
+                type: "ACTION_REJECTED",
+                messageAr: "لم يتم تمرير حزمة لعب أو قالب صالح!"
+              })
+            );
+            return;
+          }
+
+          if (!communityMap && msg.presetKey !== "MONOPOLY_CLASSIC") {
+            const activeThemeId = this.machine.state.themeId || this.machine.state.settings?.themeId;
+            if (activeThemeId && activeThemeId !== "ARABIAN_MAJLIS") {
+              sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+            }
+          }
+          if (communityMap) {
+            const activeThemeId = this.machine.state.themeId || this.machine.state.settings?.themeId;
+            if (
+              activeThemeId &&
+              activeThemeId !== "ARABIAN_MAJLIS" &&
+              activeThemeId !== sessionPack.themeId
+            ) {
+              sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+            }
+          }
+          this.machine.startGameWithAIPack(sessionPack);
+          break;
+        }
+
+        case "ADD_BOT": {
+          const botNames = ["فهد 🤖", "نورة 🤖", "سعود 🤖", "سارة 🤖", "ريان 🤖", "دحوم 🤖"];
+          const botColors = ["#EF4444", "#3B82F6", "#22C55E", "#EAB308", "#A855F7", "#EC4899"];
+          const currentCount = Object.keys(this.machine.state.players).length;
+          const botName = typeof msg.name === "string" ? msg.name : botNames[currentCount % botNames.length];
+          const botColor = typeof msg.color === "string" ? msg.color : botColors[currentCount % botColors.length];
+          const botId = `bot_${Date.now().toString().slice(-4)}_${Math.random().toString(36).slice(2, 6)}`;
+
+          this.machine.joinPlayer(botId, botName, botColor, undefined, true);
+          break;
+        }
+
+        case "START_DEFAULT_WITH_BOTS": {
+          const botNames = ["فهد 🤖", "نورة 🤖", "سعود 🤖", "سارة 🤖"];
+          const botColors = ["#EF4444", "#3B82F6", "#22C55E", "#EAB308"];
+          while (Object.keys(this.machine.state.players).length < 3) {
+            const count = Object.keys(this.machine.state.players).length;
+            const botId = `bot_${count + 1}_${Date.now().toString().slice(-4)}`;
+            this.machine.joinPlayer(botId, botNames[count % botNames.length], botColors[count % botColors.length], undefined, true);
+          }
+
+          let sessionPack: GeneratedSessionPack;
+          const communityMap = typeof msg.presetKey === "string" ? getCommunityMapByKey(msg.presetKey) : undefined;
+          if (communityMap) {
+            sessionPack = communityMap.pack;
+            const chosenTheme =
+              this.machine.state.themeId || this.machine.state.settings?.themeId;
+            if (!chosenTheme || chosenTheme === "ARABIAN_MAJLIS") {
+              this.machine.state.themeId = communityMap.themeId;
+              if (this.machine.state.settings) {
+                this.machine.state.settings.themeId = communityMap.themeId;
+              }
+            }
+          } else if (typeof msg.presetKey === "string" && PRESET_PACKS[msg.presetKey]) {
+            sessionPack = PRESET_PACKS[msg.presetKey];
+            if (msg.presetKey === "MONOPOLY_CLASSIC") {
+              this.machine.state.themeId = "MONOPOLY_CLASSIC";
+              if (this.machine.state.settings) {
+                this.machine.state.settings.themeId = "MONOPOLY_CLASSIC";
+              }
+            }
+          } else {
+            const playerNames = Object.values(this.machine.state.players).map(p => p.name);
+            sessionPack = getDefaultSessionPack(playerNames);
+          }
+
+          if (!communityMap && msg.presetKey !== "MONOPOLY_CLASSIC") {
+            const activeThemeId = this.machine.state.themeId || this.machine.state.settings?.themeId;
+            if (activeThemeId && activeThemeId !== "ARABIAN_MAJLIS") {
+              sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+            }
+          }
+          if (communityMap) {
+            const activeThemeId = this.machine.state.themeId || this.machine.state.settings?.themeId;
+            if (
+              activeThemeId &&
+              activeThemeId !== "ARABIAN_MAJLIS" &&
+              activeThemeId !== sessionPack.themeId
+            ) {
+              sessionPack = applyThemeToGamePack(sessionPack, activeThemeId);
+            }
+          }
+          this.machine.startGameWithAIPack(sessionPack);
+          break;
+        }
+
+        case "RESET_TO_LOBBY": {
+          this.machine.resetToLobby();
           break;
         }
 
         case "ROLL_DICE": {
           this.machine.rollDiceAndMove(playerId);
+          break;
+        }
+
+        case "MOVE_LUDO_TOKEN": {
+          this.machine.moveLudoToken(playerId, msg.tokenId);
+          break;
+        }
+
+        case "DROP_CONNECT_FOUR_PIECE": {
+          this.machine.dropConnectFourPiece(playerId, Number(msg.column));
+          break;
+        }
+
+        case "MOVE_CHECKERS_PIECE": {
+          this.machine.moveCheckersPiece(
+            playerId,
+            Number(msg.fromRow),
+            Number(msg.fromCol),
+            Number(msg.toRow),
+            Number(msg.toCol)
+          );
+          break;
+        }
+
+        case "CALL_BINGO_NUMBER": {
+          this.machine.callBingoNumber(playerId);
+          break;
+        }
+
+        case "BUY_PROPERTY": {
+          this.machine.buyProperty(playerId, msg.tileIndex);
+          break;
+        }
+
+        case "BUILD_HOUSE": {
+          this.machine.buildHouse(playerId, msg.tileIndex);
+          break;
+        }
+
+        case "PAY_JAIL_FINE": {
+          this.machine.payJailFine(playerId);
+          break;
+        }
+
+        case "CLAIM_OR_ATTACK_TILE": {
+          this.machine.claimOrAttackTile(playerId, msg.targetTileIndex);
           break;
         }
 
@@ -147,6 +350,30 @@ export default class GameRoomServer implements Party.Server {
             msg.cardId,
             msg.chosenTargetId
           );
+          break;
+        }
+
+        case "PLAY_UNO_CARD": {
+          this.machine.playUnoCard(
+            playerId,
+            msg.cardId,
+            msg.chosenColor
+          );
+          break;
+        }
+
+        case "DRAW_UNO_CARD": {
+          this.machine.drawUnoCard(playerId);
+          break;
+        }
+
+        case "PASS_UNO_AFTER_DRAW": {
+          this.machine.passUnoAfterDraw(playerId);
+          break;
+        }
+
+        case "SHOUT_UNO": {
+          this.machine.shoutUno(playerId);
           break;
         }
 
@@ -170,7 +397,9 @@ export default class GameRoomServer implements Party.Server {
             JSON.stringify({
               type: "LIVE_REACTION",
               playerId,
-              emoji: msg.emoji
+              emoji: msg.emoji,
+              text: msg.text,
+              voiceId: msg.voiceId
             })
           );
           break;
@@ -221,20 +450,35 @@ export default class GameRoomServer implements Party.Server {
     viewerId: string
   ) {
     const rawState: FullRoomState = this.machine.state;
+    const visibility = rawState.rulesConfig?.cardVisibility || "SECRET_PHONE_ONLY";
 
     const sanitizedPlayers = Object.fromEntries(
       Object.entries(rawState.players).map(([id, player]) => {
-        const isOwner = id === viewerId;
+        let visibleHand: GameCard[] = [];
+        if (visibility === "OPEN_PUBLIC_CARDS") {
+          visibleHand = player.secretHand;
+        } else if (visibility === "NO_HAND_CARDS") {
+          visibleHand = [];
+        } else {
+          // SECRET_PHONE_ONLY: only owner sees their cards
+          const isOwner = id === viewerId;
+          visibleHand = isOwner ? player.secretHand : [];
+        }
+
         return [
           id,
           {
             ...player,
             secretHandCount: player.secretHand.length,
-            secretHand: isOwner ? player.secretHand : []
+            secretHand: visibleHand
           }
         ];
       })
     );
+
+    const sanitizedUnoState = rawState.unoState
+      ? sanitizeUnoStateForViewer(rawState.unoState, viewerId)
+      : undefined;
 
     conn.send(
       JSON.stringify({
@@ -242,7 +486,8 @@ export default class GameRoomServer implements Party.Server {
         state: {
           ...rawState,
           deck: undefined,
-          players: sanitizedPlayers
+          players: sanitizedPlayers,
+          unoState: sanitizedUnoState
         }
       })
     );

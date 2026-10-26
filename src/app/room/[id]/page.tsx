@@ -1,12 +1,20 @@
 "use client";
 
-import { use, Suspense } from "react";
+import { use, Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useGameRoom } from "@/hooks/useGameRoom";
 import SharedBoardScreen from "@/components/SharedBoardScreen";
 import PlayerControllerScreen from "@/components/PlayerControllerScreen";
 import { Trophy, Medal, Award, Home, RotateCcw, Shield, Coins, Flame } from "lucide-react";
 import type { FullRoomState } from "@/game/gameRoom";
+import { detectRulebookId } from "@/game/rulebooks";
+import { getPlayerInitials } from "@/utils/playerDisplay";
+import {
+  gameUsesCurrency,
+  getPlayerResultStat,
+  getWinnerAchievement,
+  orderGameStandings
+} from "@/utils/gameResults";
 
 interface RoomPageProps {
   params: Promise<{ id: string }>;
@@ -24,36 +32,61 @@ function GameOverScreen({
   playerId: string;
 }) {
   const router = useRouter();
-  const standings =
-    lastAnimation?.standings ||
-    Object.values(gameState.players).sort((a, b) => b.coins - a.coins);
+  const resultRulebookId = detectRulebookId(gameState);
+  const resultUsesCurrency = gameUsesCurrency(resultRulebookId);
+  const winner = lastAnimation?.winner || gameState.winner;
+  const standings = orderGameStandings(
+    (lastAnimation?.standings as any[]) || Object.values(gameState.players),
+    gameState,
+    resultRulebookId,
+    winner?.id
+  );
 
-  const winner = lastAnimation?.winner || standings[0];
   const myPlayer = gameState.players[playerId];
+  const resultReason =
+    lastAnimation?.reasonAr ||
+    lastAnimation?.victoryReason ||
+    gameState.victoryReason ||
+    "اختتمت الجولات بنجاح وتفوق البطل على منافسيه";
 
-  // Derive MVP titles
-  const richest = standings[0];
-  const biggestThief = [...standings].sort(
-    (a, b) => (b.stats?.coinsStolen || 0) - (a.stats?.coinsStolen || 0)
-  )[0];
-  const shieldMaster = [...standings].sort(
-    (a, b) => (b.stats?.shieldsTriggered || 0) - (a.stats?.shieldsTriggered || 0)
-  )[0];
+  // Derive MVP titles (اقتصادية فقط؛ لا معنى لرصيد في ألعاب المهارة)
+  // «وزير المالية» يُحسب بأعلى رصيد فعلي، وليس بترتيب النتائج الذي يضع الفائز أولاً.
+  const richest = resultUsesCurrency
+    ? [...standings].sort((a, b) => (b.coins || 0) - (a.coins || 0))[0]
+    : null;
+  const biggestThief = resultUsesCurrency
+    ? [...standings].sort(
+        (a, b) => (b.stats?.coinsStolen || 0) - (a.stats?.coinsStolen || 0)
+      )[0]
+    : null;
+  const shieldMaster = resultUsesCurrency
+    ? [...standings].sort(
+        (a, b) => (b.stats?.shieldsTriggered || 0) - (a.stats?.shieldsTriggered || 0)
+      )[0]
+    : null;
 
   let mostBetrayed = null;
   let maxBetrayals = 0;
-  for (const p of standings) {
-    const total = Object.values(p.stats?.timesBetrayedBy || {}).reduce<number>((s, v) => s + (Number(v) || 0), 0);
-    if (total > maxBetrayals) {
-      maxBetrayals = total;
-      mostBetrayed = p;
+  if (resultUsesCurrency) {
+    for (const p of standings) {
+      const total = Object.values(p.stats?.timesBetrayedBy || {}).reduce<number>((s, v) => s + (Number(v) || 0), 0);
+      if (total > maxBetrayals) {
+        maxBetrayals = total;
+        mostBetrayed = p;
+      }
     }
   }
+
+  const hasMvpCards =
+    Boolean(richest) ||
+    (biggestThief && (biggestThief.stats?.coinsStolen || 0) > 0) ||
+    (shieldMaster && (shieldMaster.stats?.shieldsTriggered || 0) > 0) ||
+    (mostBetrayed && maxBetrayals > 0);
 
   return (
     <div
       dir="rtl"
-      className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-6 select-none font-sans"
+      className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-6 select-none font-sans overflow-y-auto"
     >
       {/* Header */}
       <header className="text-center mt-4">
@@ -75,17 +108,21 @@ function GameOverScreen({
             className="bg-slate-900/90 border-2 rounded-3xl p-6 text-center shadow-xl"
           >
             <h2 className="text-lg font-bold text-slate-300">نتيجتك الشخصية</h2>
-            <div className="text-4xl font-black text-amber-400 mt-2">
-              {myPlayer.coins} {gameState.currencyName}
+            <div className="text-3xl md:text-4xl font-black text-amber-400 mt-2" title={getPlayerResultStat(resultRulebookId, myPlayer.id, gameState)}>
+              {resultUsesCurrency
+                ? `${myPlayer.coins} ${gameState.currencyName}`
+                : getPlayerResultStat(resultRulebookId, myPlayer.id, gameState)}
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              المركز #{standings.findIndex((p: any) => p.id === myPlayer.id) + 1} من بين {standings.length} لاعبين
+              {winner
+                ? `المركز #${standings.findIndex((p: any) => p.id === myPlayer.id) + 1} من بين ${standings.length} لاعبين`
+                : `تعادل بين ${standings.length} لاعبين — لا مراكز فائزة`}
             </p>
           </div>
         )}
 
         {/* Winner Highlight */}
-        {winner && (
+        {winner ? (
           <div className="bg-gradient-to-r from-amber-500/20 via-yellow-500/30 to-amber-500/20 border-2 border-amber-400/60 rounded-3xl p-6 text-center shadow-2xl">
             <span className="text-xs uppercase font-black tracking-widest text-amber-300 bg-amber-500/20 px-3 py-1 rounded-full border border-amber-400/30">
               👑 بطل السهرة الأول
@@ -93,17 +130,26 @@ function GameOverScreen({
             <div className="flex items-center justify-center gap-3 mt-4">
               <div
                 style={{ backgroundColor: winner.color }}
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-slate-950 font-black text-2xl shadow-lg"
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-slate-950 font-black text-2xl shadow-lg shrink-0"
               >
-                {winner.name.slice(0, 2)}
+                {getPlayerInitials(winner.name)}
               </div>
-              <div className="text-right">
-                <h3 className="text-2xl font-black text-white">{winner.name}</h3>
+              <div className="text-right min-w-0">
+                <h3 className="text-2xl font-black text-white truncate max-w-[220px]" title={winner.name}>{winner.name}</h3>
                 <span className="text-amber-400 font-bold text-lg">
-                  {winner.coins} {gameState.currencyName}
+                  {resultUsesCurrency
+                    ? `${winner.coins} ${gameState.currencyName}`
+                    : getWinnerAchievement(resultRulebookId)}
                 </span>
               </div>
             </div>
+            <p className="text-sm text-slate-300 mt-3">{resultReason}</p>
+          </div>
+        ) : (
+          <div className="bg-slate-900/90 border-2 border-slate-700 rounded-3xl p-6 text-center shadow-2xl">
+            <span className="text-4xl">🤝</span>
+            <h3 className="text-2xl font-black text-white mt-2">انتهت الجولة بالتعادل</h3>
+            <p className="text-sm text-slate-400 mt-1">{resultReason}</p>
           </div>
         )}
 
@@ -115,9 +161,10 @@ function GameOverScreen({
           </h3>
           <div className="space-y-3">
             {standings.map((player: any, idx: number) => {
-              const isFirst = idx === 0;
-              const isSecond = idx === 1;
-              const isThird = idx === 2;
+              const isFirst = Boolean(winner) && idx === 0;
+              const isSecond = Boolean(winner) && idx === 1;
+              const isThird = Boolean(winner) && idx === 2;
+              const playerStat = getPlayerResultStat(resultRulebookId, player.id, gameState);
 
               return (
                 <div
@@ -135,9 +182,9 @@ function GameOverScreen({
                     isFirst ? "bg-amber-950/30 shadow-md" : "bg-slate-950/60"
                   }`}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
                     <span
-                      className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm ${
+                      className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${
                         isFirst
                           ? "bg-amber-400 text-slate-950"
                           : isSecond
@@ -151,22 +198,28 @@ function GameOverScreen({
                     </span>
                     <div
                       style={{ backgroundColor: player.color }}
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-slate-950 text-sm shadow"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-slate-950 text-sm shadow shrink-0"
                     >
-                      {player.name.slice(0, 2)}
+                      {getPlayerInitials(player.name)}
                     </div>
-                    <div>
-                      <div className="font-bold text-base text-white">{player.name}</div>
-                      <div className="text-xs text-slate-400">
-                        وصل إلى المربع #{player.position}
+                    <div className="min-w-0">
+                      <div className="font-bold text-base text-white truncate max-w-[140px]" title={player.name}>{player.name}</div>
+                      <div className="text-xs text-slate-400 truncate max-w-[150px]" title={playerStat}>
+                        {playerStat}
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-left font-black text-xl text-amber-400 flex items-center gap-1.5">
-                    <span>{player.coins}</span>
-                    <Coins className="w-5 h-5" />
-                  </div>
+                  {resultUsesCurrency ? (
+                    <div className="text-left font-black text-xl text-amber-400 flex items-center gap-1.5 shrink-0">
+                      <span>{player.coins}</span>
+                      <Coins className="w-5 h-5" />
+                    </div>
+                  ) : (
+                    <div className="text-left font-black text-lg shrink-0">
+                      {isFirst ? "🏆" : "🎮"}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -174,6 +227,7 @@ function GameOverScreen({
         </div>
 
         {/* MVP Titles Awards */}
+        {hasMvpCards && (
         <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl">
           <h3 className="text-lg font-black mb-4 flex items-center gap-2">
             <Award className="w-5 h-5 text-purple-400" />
@@ -217,6 +271,7 @@ function GameOverScreen({
             )}
           </div>
         </div>
+        )}
       </main>
 
       {/* Footer Navigation */}
@@ -236,7 +291,14 @@ function GameOverScreen({
 function RoomPageContent({ roomId }: { roomId: string }) {
   const searchParams = useSearchParams();
   const roleParam = searchParams.get("role")?.toUpperCase();
-  const role: "HOST" | "PLAYER" = roleParam === "PLAYER" ? "PLAYER" : "HOST";
+  // `/room/CODE` is the phone join link, so it must default to the player
+  // controller. Only an explicit `role=HOST` (or SPECTATOR) opens the board.
+  const role: "HOST" | "PLAYER" | "SPECTATOR" =
+    roleParam === "HOST"
+      ? "HOST"
+      : roleParam === "SPECTATOR"
+      ? "SPECTATOR"
+      : "PLAYER";
 
   const {
     playerId,
@@ -246,6 +308,28 @@ function RoomPageContent({ roomId }: { roomId: string }) {
     sendAction,
     isGeneratingAI
   } = useGameRoom(roomId, role);
+
+  const [networkOrigin, setNetworkOrigin] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window === "undefined" || role !== "HOST") return;
+    const isLocal =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.hostname === "0.0.0.0";
+
+    if (isLocal) {
+      fetch("/api/host-info")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.preferredIp && data.preferredIp !== "localhost") {
+            const port = window.location.port ? `:${window.location.port}` : "";
+            setNetworkOrigin(`${window.location.protocol}//${data.preferredIp}${port}`);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [role]);
 
   if (!roomId) {
     return (
@@ -270,8 +354,8 @@ function RoomPageContent({ roomId }: { roomId: string }) {
     );
   }
 
-  // 1. GAME_OVER Phase: render game over summary screen
-  if (gameState.phase === "GAME_OVER") {
+  // 1. GAME_OVER Phase: the TV / spectator view keeps its celebration board.
+  if (gameState.phase === "GAME_OVER" && role === "PLAYER") {
     return (
       <GameOverScreen
         gameState={gameState}
@@ -282,12 +366,14 @@ function RoomPageContent({ roomId }: { roomId: string }) {
     );
   }
 
-  // 2. HOST Role: renders SharedBoardScreen
-  if (role === "HOST") {
-    const joinUrl =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/room/${roomId}?role=PLAYER`
-        : `https://yourgame.com/room/${roomId}?role=PLAYER`;
+  // 2. HOST / SPECTATOR Roles: render the shared big-screen board
+  if (role === "HOST" || role === "SPECTATOR") {
+    const effectiveOrigin =
+      networkOrigin ||
+      (typeof window !== "undefined" ? window.location.origin : "");
+    const joinUrl = effectiveOrigin
+      ? `${effectiveOrigin}/room/${roomId}?role=PLAYER`
+      : `https://yourgame.com/room/${roomId}?role=PLAYER`;
 
     return (
       <SharedBoardScreen
@@ -296,6 +382,8 @@ function RoomPageContent({ roomId }: { roomId: string }) {
         joinUrl={joinUrl}
         sendAction={sendAction}
         isGeneratingAI={isGeneratingAI}
+        errorToast={errorToast}
+        isSpectator={role === "SPECTATOR"}
       />
     );
   }

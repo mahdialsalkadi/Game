@@ -4,9 +4,16 @@ import { getUserById } from "@/game/userStore";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+    let userId = searchParams.get("userId");
 
     if (!userId) {
+      const authHeader = request.headers.get("authorization") || request.headers.get("Authorization");
+      if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
+        userId = authHeader.slice(7).trim();
+      }
+    }
+
+    if (!userId || userId === "undefined" || userId === "null") {
       return NextResponse.json(
         { success: false, error: "معرّف المستخدم مطلوب." },
         { status: 400 }

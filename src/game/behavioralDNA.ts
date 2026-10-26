@@ -43,17 +43,29 @@ export function processPlayerAction(
   dna: PlayerBehavioralDNA,
   actionType:
     | "BUY_PROPERTY"
+    | "BUILD_HOUSE"
     | "RENT_COLLECTED"
     | "CLAIM_OR_ATTACK_TILE"
+    | "LUDO_CAPTURE"
     | "STEAL_COINS"
     | "PLAY_SECRET_CARD"
     | "DRAW_CARD"
-    | "SUBMIT_VOTE",
+    | "SUBMIT_VOTE"
+    | "MAFIA_KILL"
+    | "DETECTIVE_CHECK",
   payload?: any
 ): PlayerBehavioralDNA {
   switch (actionType) {
     case "BUY_PROPERTY":
+    case "BUILD_HOUSE":
       dna.capitalistScore = Math.min(100, dna.capitalistScore + 5);
+      break;
+
+    case "LUDO_CAPTURE":
+      dna.aggressionScore = Math.min(100, dna.aggressionScore + 8);
+      if (payload?.targetPlayerId) {
+        dna.nemesisMap[payload.targetPlayerId] = (dna.nemesisMap[payload.targetPlayerId] || 0) + 1;
+      }
       break;
 
     case "RENT_COLLECTED":
@@ -90,6 +102,17 @@ export function processPlayerAction(
       if (payload?.targetPlayerId) {
         dna.nemesisMap[payload.targetPlayerId] = (dna.nemesisMap[payload.targetPlayerId] || 0) + 1;
       }
+      break;
+
+    case "MAFIA_KILL":
+      dna.aggressionScore = Math.min(100, dna.aggressionScore + 6);
+      if (payload?.targetId) {
+        dna.nemesisMap[payload.targetId] = (dna.nemesisMap[payload.targetId] || 0) + 1;
+      }
+      break;
+
+    case "DETECTIVE_CHECK":
+      dna.tacticalCardScore = Math.min(100, dna.tacticalCardScore + 4);
       break;
   }
 
@@ -129,12 +152,16 @@ export async function recordUserActionInStore(
   userId: string,
   actionType:
     | "BUY_PROPERTY"
+    | "BUILD_HOUSE"
     | "RENT_COLLECTED"
     | "CLAIM_OR_ATTACK_TILE"
+    | "LUDO_CAPTURE"
     | "STEAL_COINS"
     | "PLAY_SECRET_CARD"
     | "DRAW_CARD"
-    | "SUBMIT_VOTE",
+    | "SUBMIT_VOTE"
+    | "MAFIA_KILL"
+    | "DETECTIVE_CHECK",
   payload?: any
 ): Promise<void> {
   try {

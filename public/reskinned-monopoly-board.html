@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authentic 2D Monopoly Board - Upright Screen Mode (Zero Neck Turn)</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==========================================================================
+       SUPER LIGHTWEIGHT CSS: ZERO HEAVY SVG FILTERS FOR BUTTERY 60-120FPS
+       ========================================================================== */
+    :root {
+      /* Mode 1: Exact Classic Image (White / 2D Flat Reference) */
+      --board-bg: #FFFFFF;
+      --table-canvas: #0F172A;
+      --center-bg: #FAF9F6;
+      --tile-bg: #FFFFFF;
+      --tile-stroke: #1E293B;
+      --text-main: #0F172A;
+      --text-sub: #475569;
+      --price-color: #0F172A;
+
+      /* Official Authentic Monopoly Colorways */
+      --color-brown: #78350F;
+      --color-lightblue: #0284C7;
+      --color-pink: #DB2777;
+      --color-orange: #EA580C;
+      --color-red: #DC2626;
+      --color-yellow: #CA8A04;
+      --color-green: #059669;
+      --color-darkblue: #1D4ED8;
+
+      /* Corners */
+      --go-red: #DC2626;
+      --jail-orange: #FB923C;
+      --jail-bars: #111111;
+      --parking-red: #DC2626;
+      --police-blue: #1E3A8A;
+      --chance-red: #DC2626;
+      --chance-blue: #0284C7;
+      --chest-blue: #0284C7;
+    }
+
+    body.dark-mode {
+      /* Mode 2: Lightweight 2D Dark Mode (Zero Lag) */
+      --board-bg: #0C0F17;
+      --table-canvas: #05070B;
+      --center-bg: #121722;
+      --tile-bg: #171D2B;
+      --tile-stroke: #C5A059;
+      --text-main: #F8FAFC;
+      --text-sub: #94A3B8;
+      --price-color: #FDE047;
+
+      --color-brown: #843E23;
+      --color-lightblue: #0284C7;
+      --color-pink: #DB2777;
+      --color-orange: #EA580C;
+      --color-red: #EF4444;
+      --color-yellow: #CA8A04;
+      --color-green: #059669;
+      --color-darkblue: #1D4ED8;
+
+      --go-red: #EF4444;
+      --jail-orange: #EA580C;
+      --jail-bars: #FDE047;
+      --parking-red: #EF4444;
+      --police-blue: #3B82F6;
+      --chance-red: #EF4444;
+      --chance-blue: #38BDF8;
+      --chest-blue: #0EA5E9;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--table-canvas);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      font-family: 'Montserrat', sans-serif;
+    }
+
+    .table-container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    .monopoly-board-wrapper {
+      position: relative;
+      max-width: 95vmin;
+      max-height: 95vmin;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.7);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--board-bg);
+    }
+
+    .monopoly-board-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      user-select: none;
+    }
+
+    .tile-text-title {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      letter-spacing: 0.2px;
+      fill: var(--text-main);
+      text-anchor: middle;
+    }
+
+    .tile-text-price {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      letter-spacing: 0.2px;
+      fill: var(--price-color);
+      text-anchor: middle;
+    }
+
+    /* Crisp, Lightweight 2D Dice */
+    .dice-cube {
+      width: 44px;
+      height: 44px;
+      background: #FFFFFF;
+      border: 2px solid #1C1917;
+      border-radius: 8px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      padding: 5px;
+      box-sizing: border-box;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+
+    .dice-pip {
+      width: 7px;
+      height: 7px;
+      background: #1C1917;
+      border-radius: 50%;
+      margin: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="table-container">
+    <div class="monopoly-board-wrapper">
+      <svg class="monopoly-board-svg" viewBox="0 0 1100 1100" xmlns="http://www.w3.org/2000/svg">
+
+        <!-- ==================================================================
+             REUSABLE 2D MICRO-ICONS (100% MATCHING REFERENCE BOARD, ZERO LAG)
+             ================================================================== -->
+        <defs>
+          <!-- Steam Locomotive (Black Silhouette on Railroads) -->
+          <g id="icon-steam-locomotive">
+            <path d="M -20,8 L -20,-2 L -14,-2 L -14,-14 L 6,-14 L 6,-6 L 16,-6 L 16,8 Z" fill="var(--text-main)" />
+            <rect x="-12" y="-12" width="7" height="6" rx="1" fill="#FEF08A" />
+            <path d="M 9,-14 L 14,-14 L 13,-6 L 10,-6 Z" fill="var(--text-main)" />
+            <polygon points="16,3 21,8 16,8" fill="var(--text-main)" />
+            <circle cx="16" cy="-2" r="2" fill="#FDE047" />
+            <circle cx="-13" cy="9" r="4.5" fill="var(--text-main)" stroke="#666" stroke-width="1.2" />
+            <circle cx="-3" cy="9" r="4.5" fill="var(--text-main)" stroke="#666" stroke-width="1.2" />
+            <circle cx="7" cy="9" r="4.5" fill="var(--text-main)" stroke="#666" stroke-width="1.2" />
+            <circle cx="16" cy="9" r="3.2" fill="var(--text-main)" stroke="#666" stroke-width="1" />
+            <line x1="-13" y1="9" x2="9" y2="9" stroke="#E2E8F0" stroke-width="1.5" />
+          </g>
+
+          <!-- Water Works Spigot / Faucet -->
+          <g id="icon-water-spigot">
+            <path d="M -18,-4 L -4,-4 L 3,-4 C 10,-4 12,1 12,8 L 12,14 L 7,14 L 7,8 C 7,5 5,4 1,4 L -18,4 Z" fill="var(--text-main)" />
+            <rect x="-2" y="-10" width="5" height="6" fill="var(--text-main)" />
+            <ellipse cx="0.5" cy="-10" rx="9" ry="3" fill="var(--text-main)" />
+            <path d="M 9.5,18 C 11.5,18 14,20.5 14,23.5 A 4.5 4.5 0 0 1 5,23.5 C 5,20.5 7.5,18 9.5,18 Z" fill="#0284C7" />
+          </g>
+
+          <!-- Electric Company Lightbulb -->
+          <g id="icon-lightbulb">
+            <path d="M 0,-14 C 7.5,-14 12.5,-8 12.5,-1.5 C 12.5,4.5 8,8 6,11 L -6,11 C -8,8 -12.5,4.5 -12.5,-1.5 C -12.5,-8 -7.5,-14 0,-14 Z" fill="#FEF08A" stroke="var(--text-main)" stroke-width="1.8" />
+            <rect x="-5" y="11" width="10" height="2.5" fill="var(--text-main)" />
+            <rect x="-4" y="13.5" width="8" height="2.5" fill="var(--text-main)" />
+            <path d="M -2,16 L 2,16 L 0,18.5 Z" fill="var(--text-main)" />
+            <path d="M -3,8 L -3,0 L 0,-6 L 3,0 L 3,8" fill="none" stroke="#CA8A04" stroke-width="2" stroke-linecap="round" />
+            <line x1="0" y1="-18" x2="0" y2="-23" stroke="var(--text-main)" stroke-width="2" stroke-linecap="round" />
+            <line x1="-16" y1="-11" x2="-21" y2="-14" stroke="var(--text-main)" stroke-width="2" stroke-linecap="round" />
+            <line x1="16" y1="-11" x2="21" y2="-14" stroke="var(--text-main)" stroke-width="2" stroke-linecap="round" />
+          </g>
+
+          <!-- Sparkling Solitaire Diamond Ring (Luxury Tax) -->
+          <g id="icon-diamond-ring">
+            <ellipse cx="0" cy="7" rx="15" ry="11" fill="none" stroke="#F59E0B" stroke-width="3" />
+            <polygon points="-7,-4 7,-4 5,2 -5,2" fill="#F59E0B" />
+            <polygon points="0,-18 10,-8 7,-4 -7,-4 -10,-8" fill="#E0F2FE" stroke="#38BDF8" stroke-width="1" />
+            <polygon points="0,-18 4,-8 0,-4 -4,-8" fill="#FFFFFF" />
+          </g>
+
+          <!-- Income Tax Diamond -->
+          <g id="icon-income-tax-diamond">
+            <polygon points="0,-18 18,0 0,18 -18,0" fill="#FEE2E2" stroke="#DC2626" stroke-width="2.2" />
+            <polygon points="0,-10 10,0 0,10 -10,0" fill="none" stroke="#DC2626" stroke-width="1.2" />
+            <circle cx="0" cy="0" r="4.5" fill="#DC2626" />
+          </g>
+
+          <!-- Community Chest (Classic Blue Chest) -->
+          <g id="icon-community-chest">
+            <rect x="-16" y="-4" width="32" height="20" rx="2" fill="var(--chest-blue)" stroke="var(--text-main)" stroke-width="1.8" />
+            <path d="M -18,-4 C -18,-14 18,-14 18,-4 Z" fill="#0369A1" stroke="var(--text-main)" stroke-width="1.8" />
+            <line x1="-9" y1="-12" x2="-9" y2="16" stroke="#FEF08A" stroke-width="1.8" />
+            <line x1="9" y1="-12" x2="9" y2="16" stroke="#FEF08A" stroke-width="1.8" />
+            <rect x="-3" y="1" width="6" height="7" rx="1" fill="#FEF08A" stroke="var(--text-main)" stroke-width="1" />
+          </g>
+
+          <!-- Chance Question Marks -->
+          <g id="icon-chance-red">
+            <text x="0" y="18" font-family="'Times New Roman', 'Cinzel', serif" font-size="52" font-weight="900" fill="var(--chance-red)" text-anchor="middle">?</text>
+          </g>
+          <g id="icon-chance-blue">
+            <text x="0" y="18" font-family="'Times New Roman', 'Cinzel', serif" font-size="52" font-weight="900" fill="var(--chance-blue)" text-anchor="middle">?</text>
+          </g>
+
+          <!-- 2D Smooth Player Token Disc -->
+          <g id="token-player-2d">
+            <circle cx="0" cy="2" r="16" fill="rgba(0,0,0,0.35)" />
+            <circle cx="0" cy="0" r="16" fill="#DC2626" stroke="#FFFFFF" stroke-width="2.5" />
+            <circle cx="0" cy="0" r="12" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="1" />
+            <text x="0" y="5" font-family="'Montserrat', sans-serif" font-size="11" font-weight="900" fill="#FFFFFF" text-anchor="middle">P1</text>
+          </g>
+        </defs>
+
+        <!-- Base Background -->
+        <rect x="0" y="0" width="1100" height="1100" fill="var(--board-bg)" stroke="var(--tile-stroke)" stroke-width="3" />
+        <rect x="145" y="145" width="810" height="810" fill="var(--center-bg)" stroke="var(--tile-stroke)" stroke-width="2" />
+
+        <!-- ============================================================== -->
+        <!-- CENTER 2D AREA: CLEAN RED MONOPOLY LOGO & DICE ROLLER          -->
+        <!-- ============================================================== -->
+        <g id="center-board-elements">
+          <!-- Red Monopoly Logo Banner (Diagonal) -->
+          <g id="monopoly-logo-banner" transform="translate(550, 470) rotate(-45)">
+            <rect x="-240" y="-55" width="480" height="110" rx="12" fill="#DC2626" stroke="#FFFFFF" stroke-width="3" />
+            <text x="0" y="24" font-family="'Arial Black', Impact, sans-serif" font-weight="900" font-size="64" letter-spacing="4" fill="#FFFFFF" stroke="#000000" stroke-width="2" paint-order="stroke fill" text-anchor="middle">
+              MONOPOLY
+            </text>
+          </g>
+
+          <!-- 2D Community Chest Slot Outline -->
+          <g transform="translate(360, 360) rotate(-45)">
+            <rect x="-85" y="-55" width="170" height="110" rx="8" fill="none" stroke="var(--tile-stroke)" stroke-width="2" stroke-dasharray="6 6" />
+            <g transform="translate(0, -6)">
+              <use href="#icon-community-chest" transform="scale(1.2)" />
+            </g>
+            <text x="0" y="32" class="tile-text-title" font-size="12">COMMUNITY CHEST</text>
+          </g>
+
+          <!-- 2D Chance Slot Outline -->
+          <g transform="translate(740, 740) rotate(-45)">
+            <rect x="-85" y="-55" width="170" height="110" rx="8" fill="none" stroke="var(--tile-stroke)" stroke-width="2" stroke-dasharray="6 6" />
+            <g transform="translate(0, -6)">
+              <use href="#icon-chance-red" transform="scale(0.8)" />
+            </g>
+            <text x="0" y="34" class="tile-text-title" font-size="13">CHANCE</text>
+          </g>
+
+          <!-- Interactive 2D Dice Container in Center Hub -->
+          <foreignObject x="450" y="580" width="200" height="100" class="overflow-visible">
+            <div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
+              <div style="display: flex; gap: 12px; cursor: pointer;" onclick="roll2DDice()">
+                <!-- Die 1 -->
+                <div id="die-1" class="dice-cube">
+                  <div class="dice-pip" style="grid-area: 1/1;"></div>
+                  <div class="dice-pip" style="grid-area: 2/2;"></div>
+                  <div class="dice-pip" style="grid-area: 3/3;"></div>
+                </div>
+                <!-- Die 2 -->
+                <div id="die-2" class="dice-cube">
+                  <div class="dice-pip" style="grid-area: 1/1;"></div>
+                  <div class="dice-pip" style="grid-area: 1/3;"></div>
+                  <div class="dice-pip" style="grid-area: 3/1;"></div>
+                  <div class="dice-pip" style="grid-area: 3/3;"></div>
+                </div>
+              </div>
+              <button onclick="roll2DDice()" style="background: #DC2626; color: #FFF; border: none; padding: 4px 14px; border-radius: 9999px; font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 800; cursor: pointer; letter-spacing: 0.5px;">
+                ROLL 2D DICE
+              </button>
+            </div>
+          </foreignObject>
+        </g>
+
+        <!-- ============================================================== -->
+        <!-- BOTTOM TRACK: SPACES 0 TO 10 (UPRIGHT INWARD)                 -->
+        <!-- ============================================================== -->
+        <g id="bottom-track">
+          <!-- Space 0 (Corner): GO / START -->
+          <g id="corner-go" class="special-corner" transform="translate(955, 955)">
+            <rect x="0" y="0" width="145" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="2" />
+            <text x="72" y="24" class="tile-text-title" font-size="8.5">COLLECT</text>
+            <text x="72" y="36" class="tile-text-title" font-size="9.5" fill="var(--go-red)">$200.00 SALARY</text>
+            <text x="72" y="48" class="tile-text-title" font-size="8.5">AS YOU PASS</text>
+            <text x="72" y="98" font-family="'Arial Black', Impact, sans-serif" font-size="48" font-weight="900" fill="var(--go-red)" stroke="#7F1D1D" stroke-width="1.2" text-anchor="middle" letter-spacing="2">GO</text>
+            <g transform="translate(72, 122)">
+              <path d="M -46,0 L -20,-12 L -20,-5 L 46,-5 L 46,5 L -20,5 L -20,12 Z" fill="var(--go-red)" stroke="#7F1D1D" stroke-width="1" />
+            </g>
+          </g>
+
+          <!-- Space 1: Mediterranean Avenue -->
+          <g id="tile-mediterranean" class="property-tile" transform="translate(865, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="90" height="28" fill="var(--color-brown)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="56" class="tile-text-title" font-size="9">MEDITERRANEAN</text>
+            <text x="45" y="70" class="tile-text-title" font-size="9">AVENUE</text>
+            <text x="45" y="130" class="tile-text-price" font-size="11">PRICE $60</text>
+          </g>
+
+          <!-- Space 2: Community Chest -->
+          <g id="tile-community-bottom" class="property-tile" transform="translate(775, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="45" y="24" class="tile-text-title" font-size="8.5">COMMUNITY</text>
+            <text x="45" y="36" class="tile-text-title" font-size="8.5">CHEST</text>
+            <g transform="translate(45, 66)">
+              <use href="#icon-community-chest" />
+            </g>
+            <text x="45" y="108" class="tile-text-title" font-size="6.5" fill="var(--text-sub)">FOLLOW INSTRUCTIONS</text>
+            <text x="45" y="118" class="tile-text-title" font-size="6.5" fill="var(--text-sub)">ON TOP CARD</text>
+          </g>
+
+          <!-- Space 3: Baltic Avenue -->
+          <g id="tile-baltic" class="property-tile" transform="translate(685, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="90" height="28" fill="var(--color-brown)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="60" class="tile-text-title" font-size="9.5">BALTIC</text>
+            <text x="45" y="74" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="130" class="tile-text-price" font-size="11">PRICE $60</text>
+          </g>
+
+          <!-- Space 4: Income Tax -->
+          <g id="tile-income-tax" class="property-tile" transform="translate(595, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="45" y="24" class="tile-text-title" font-size="9">INCOME</text>
+            <text x="45" y="36" class="tile-text-title" font-size="9">TAX</text>
+            <g transform="translate(45, 66)">
+              <use href="#icon-income-tax-diamond" />
+            </g>
+            <text x="45" y="112" class="tile-text-title" font-size="8">PAY 10%</text>
+            <text x="45" y="124" class="tile-text-title" font-size="8">OR</text>
+            <text x="45" y="136" class="tile-text-price" font-size="11">$200</text>
+          </g>
+
+          <!-- Space 5: Reading Railroad -->
+          <g id="tile-reading-rr" class="railroad-tile" transform="translate(505, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="45" y="24" class="tile-text-title" font-size="8.5">READING</text>
+            <text x="45" y="36" class="tile-text-title" font-size="8.5">RAILROAD</text>
+            <g transform="translate(45, 68)">
+              <use href="#icon-steam-locomotive" />
+            </g>
+            <text x="45" y="130" class="tile-text-price" font-size="11">PRICE $200</text>
+          </g>
+
+          <!-- Space 6: Oriental Avenue -->
+          <g id="tile-oriental" class="property-tile" transform="translate(415, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="90" height="28" fill="var(--color-lightblue)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="60" class="tile-text-title" font-size="9.5">ORIENTAL</text>
+            <text x="45" y="74" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="130" class="tile-text-price" font-size="11">PRICE $100</text>
+          </g>
+
+          <!-- Space 7: Chance -->
+          <g id="tile-chance-bottom" class="property-tile" transform="translate(325, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="45" y="28" class="tile-text-title" font-size="11" fill="var(--chance-red)">CHANCE</text>
+            <g transform="translate(45, 80)">
+              <use href="#icon-chance-red" />
+            </g>
+          </g>
+
+          <!-- Space 8: Vermont Avenue -->
+          <g id="tile-vermont" class="property-tile" transform="translate(235, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="90" height="28" fill="var(--color-lightblue)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="60" class="tile-text-title" font-size="9.5">VERMONT</text>
+            <text x="45" y="74" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="130" class="tile-text-price" font-size="11">PRICE $100</text>
+          </g>
+
+          <!-- Space 9: Connecticut Avenue -->
+          <g id="tile-connecticut" class="property-tile" transform="translate(145, 955)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="90" height="28" fill="var(--color-lightblue)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="58" class="tile-text-title" font-size="8.5">CONNECTICUT</text>
+            <text x="45" y="72" class="tile-text-title" font-size="8.5">AVENUE</text>
+            <text x="45" y="130" class="tile-text-price" font-size="11">PRICE $120</text>
+          </g>
+
+          <!-- Space 10 (Corner): JAIL / JUST VISITING -->
+          <g id="corner-jail" class="special-corner" transform="translate(0, 955)">
+            <rect x="0" y="0" width="145" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="2" />
+            <rect x="25" y="8" width="95" height="92" fill="var(--jail-orange)" stroke="var(--tile-stroke)" stroke-width="2" rx="4" />
+            <g transform="translate(72, 48)">
+              <ellipse cx="0" cy="12" rx="18" ry="14" fill="#FFFFFF" />
+              <path d="M -14,3 L 14,3 M -17,9 L 17,9 M -16,15 L 16,15" stroke="#111111" stroke-width="2.5" />
+              <circle cx="0" cy="-6" r="12" fill="#FDE68A" stroke="#111111" stroke-width="1.5" />
+              <ellipse cx="-4" cy="-8" rx="2" ry="2.5" fill="#111111" />
+              <ellipse cx="4" cy="-8" rx="2" ry="2.5" fill="#111111" />
+            </g>
+            <g stroke="var(--jail-bars)" stroke-width="3">
+              <line x1="38" y1="8" x2="38" y2="100" />
+              <line x1="55" y1="8" x2="55" y2="100" />
+              <line x1="72" y1="8" x2="72" y2="100" />
+              <line x1="89" y1="8" x2="89" y2="100" />
+              <line x1="106" y1="8" x2="106" y2="100" />
+            </g>
+            <rect x="42" y="78" width="60" height="16" fill="#111111" rx="2" />
+            <text x="72" y="90" font-family="'Montserrat', sans-serif" font-size="10" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="1.5">IN JAIL</text>
+            <text x="72" y="128" class="tile-text-title" font-size="12" letter-spacing="2">JUST VISITING</text>
+          </g>
+        </g>
+
+        <!-- ============================================================== -->
+        <!-- LEFT TRACK: SPACES 11 TO 19 (UPRIGHT HORIZONTAL READABLE)     -->
+        <!-- ============================================================== -->
+        <g id="left-track">
+          <!-- Space 11: St. Charles Place -->
+          <g id="tile-st-charles" class="property-tile" transform="translate(0, 865)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="var(--color-pink)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="32" class="tile-text-title" font-size="9.5">ST. CHARLES</text>
+            <text x="58" y="46" class="tile-text-title" font-size="9.5">PLACE</text>
+            <text x="58" y="74" class="tile-text-price" font-size="11">PRICE $140</text>
+          </g>
+
+          <!-- Space 12: Electric Company -->
+          <g id="tile-electric-company" class="property-tile" transform="translate(0, 775)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="#D97706" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="24" class="tile-text-title" font-size="8.5">ELECTRIC COMPANY</text>
+            <g transform="translate(58, 46) scale(0.9)">
+              <use href="#icon-lightbulb" />
+            </g>
+            <text x="58" y="76" class="tile-text-price" font-size="11">PRICE $150</text>
+          </g>
+
+          <!-- Space 13: States Avenue -->
+          <g id="tile-states" class="property-tile" transform="translate(0, 685)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="var(--color-pink)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="32" class="tile-text-title" font-size="9.5">STATES</text>
+            <text x="58" y="46" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="58" y="74" class="tile-text-price" font-size="11">PRICE $140</text>
+          </g>
+
+          <!-- Space 14: Virginia Avenue -->
+          <g id="tile-virginia" class="property-tile" transform="translate(0, 595)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="var(--color-pink)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="32" class="tile-text-title" font-size="9.5">VIRGINIA</text>
+            <text x="58" y="46" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="58" y="74" class="tile-text-price" font-size="11">PRICE $160</text>
+          </g>
+
+          <!-- Space 15: Pennsylvania Railroad -->
+          <g id="tile-penn-rr" class="railroad-tile" transform="translate(0, 505)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="#334155" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="22" class="tile-text-title" font-size="8">PENNSYLVANIA RR</text>
+            <g transform="translate(58, 44) scale(0.85)">
+              <use href="#icon-steam-locomotive" />
+            </g>
+            <text x="58" y="76" class="tile-text-price" font-size="11">PRICE $200</text>
+          </g>
+
+          <!-- Space 16: St. James Place -->
+          <g id="tile-st-james" class="property-tile" transform="translate(0, 415)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="var(--color-orange)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="32" class="tile-text-title" font-size="9">ST. JAMES</text>
+            <text x="58" y="46" class="tile-text-title" font-size="9">PLACE</text>
+            <text x="58" y="74" class="tile-text-price" font-size="11">PRICE $180</text>
+          </g>
+
+          <!-- Space 17: Community Chest -->
+          <g id="tile-community-left" class="property-tile" transform="translate(0, 325)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="58" y="24" class="tile-text-title" font-size="8.5">COMMUNITY CHEST</text>
+            <g transform="translate(58, 46) scale(0.9)">
+              <use href="#icon-community-chest" />
+            </g>
+            <text x="58" y="76" class="tile-text-title" font-size="7" fill="var(--text-sub)">TOP CARD</text>
+          </g>
+
+          <!-- Space 18: Tennessee Avenue -->
+          <g id="tile-tennessee" class="property-tile" transform="translate(0, 235)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="var(--color-orange)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="32" class="tile-text-title" font-size="9">TENNESSEE</text>
+            <text x="58" y="46" class="tile-text-title" font-size="9">AVENUE</text>
+            <text x="58" y="74" class="tile-text-price" font-size="11">PRICE $180</text>
+          </g>
+
+          <!-- Space 19: New York Avenue -->
+          <g id="tile-new-york" class="property-tile" transform="translate(0, 145)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="117" y="0" width="28" height="90" fill="var(--color-orange)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="58" y="32" class="tile-text-title" font-size="9.5">NEW YORK</text>
+            <text x="58" y="46" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="58" y="74" class="tile-text-price" font-size="11">PRICE $200</text>
+          </g>
+
+          <!-- Space 20 (Corner): FREE PARKING -->
+          <g id="corner-free-parking" class="special-corner" transform="translate(0, 0)">
+            <rect x="0" y="0" width="145" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="2" />
+            <text x="72" y="26" class="tile-text-title" font-size="13" fill="var(--parking-red)" letter-spacing="2">FREE</text>
+            <g transform="translate(72, 70)">
+              <circle cx="-28" cy="14" r="9" fill="#111111" />
+              <circle cx="-28" cy="14" r="5" fill="#E5E7EB" stroke="#9CA3AF" stroke-width="1" />
+              <circle cx="28" cy="14" r="9" fill="#111111" />
+              <circle cx="28" cy="14" r="5" fill="#E5E7EB" stroke="#9CA3AF" stroke-width="1" />
+              <path d="M -38,14 C -38,3 -28,-4 -18,-4 L 18,-4 C 28,-4 38,3 38,14 Z" fill="var(--parking-red)" stroke="#991B1B" stroke-width="2" />
+              <path d="M -12,-4 L -6,-16 L 10,-16 L 16,-4 Z" fill="#BAE6FD" stroke="#991B1B" stroke-width="1.8" />
+              <circle cx="37" cy="6" r="3" fill="#FDE047" stroke="#9CA3AF" stroke-width="1" />
+              <rect x="-34" y="-18" width="4" height="24" fill="#64748B" />
+              <circle cx="-32" cy="-22" r="7" fill="#E2E8F0" stroke="#475569" stroke-width="1.5" />
+            </g>
+            <text x="72" y="126" class="tile-text-title" font-size="13" fill="var(--parking-red)" letter-spacing="2">PARKING</text>
+          </g>
+        </g>
+
+        <!-- ============================================================== -->
+        <!-- TOP TRACK: SPACES 21 TO 29 (UPRIGHT READABLE, NOT UPSIDE DOWN) -->
+        <!-- ============================================================== -->
+        <g id="top-track">
+          <!-- Space 21: Kentucky Avenue -->
+          <g id="tile-kentucky" class="property-tile" transform="translate(145, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="var(--color-red)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="38" class="tile-text-title" font-size="9.5">KENTUCKY</text>
+            <text x="45" y="52" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $220</text>
+          </g>
+
+          <!-- Space 22: Chance (Blue ? on Top Row) -->
+          <g id="tile-chance-top" class="property-tile" transform="translate(235, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="45" y="32" class="tile-text-title" font-size="11" fill="var(--chance-blue)">CHANCE</text>
+            <g transform="translate(45, 76)">
+              <use href="#icon-chance-blue" />
+            </g>
+          </g>
+
+          <!-- Space 23: Indiana Avenue -->
+          <g id="tile-indiana" class="property-tile" transform="translate(325, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="var(--color-red)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="38" class="tile-text-title" font-size="9.5">INDIANA</text>
+            <text x="45" y="52" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $220</text>
+          </g>
+
+          <!-- Space 24: Illinois Avenue -->
+          <g id="tile-illinois" class="property-tile" transform="translate(415, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="var(--color-red)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="38" class="tile-text-title" font-size="9.5">ILLINOIS</text>
+            <text x="45" y="52" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $240</text>
+          </g>
+
+          <!-- Space 25: B. & O. Railroad -->
+          <g id="tile-bo-rr" class="railroad-tile" transform="translate(505, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="#334155" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="24" class="tile-text-title" font-size="8.5">B. & O.</text>
+            <text x="45" y="36" class="tile-text-title" font-size="8.5">RAILROAD</text>
+            <g transform="translate(45, 68)">
+              <use href="#icon-steam-locomotive" />
+            </g>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $200</text>
+          </g>
+
+          <!-- Space 26: Atlantic Avenue -->
+          <g id="tile-atlantic" class="property-tile" transform="translate(595, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="var(--color-yellow)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="38" class="tile-text-title" font-size="9.5">ATLANTIC</text>
+            <text x="45" y="52" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $260</text>
+          </g>
+
+          <!-- Space 27: Ventnor Avenue -->
+          <g id="tile-ventnor" class="property-tile" transform="translate(685, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="var(--color-yellow)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="38" class="tile-text-title" font-size="9.5">VENTNOR</text>
+            <text x="45" y="52" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $260</text>
+          </g>
+
+          <!-- Space 28: Water Works -->
+          <g id="tile-water-works" class="property-tile" transform="translate(775, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="#0284C7" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="24" class="tile-text-title" font-size="8.5">WATER WORKS</text>
+            <g transform="translate(45, 62)">
+              <use href="#icon-water-spigot" />
+            </g>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $150</text>
+          </g>
+
+          <!-- Space 29: Marvin Gardens -->
+          <g id="tile-marvin" class="property-tile" transform="translate(865, 0)">
+            <rect x="0" y="0" width="90" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="117" width="90" height="28" fill="var(--color-yellow)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="45" y="38" class="tile-text-title" font-size="9.5">MARVIN</text>
+            <text x="45" y="52" class="tile-text-title" font-size="9.5">GARDENS</text>
+            <text x="45" y="104" class="tile-text-price" font-size="11">PRICE $280</text>
+          </g>
+
+          <!-- Space 30 (Corner): GO TO JAIL -->
+          <g id="corner-go-to-jail" class="special-corner" transform="translate(955, 0)">
+            <rect x="0" y="0" width="145" height="145" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="2" />
+            <text x="72" y="26" class="tile-text-title" font-size="13" letter-spacing="2">GO TO</text>
+            <g transform="translate(72, 70)">
+              <path d="M -18,24 L -14,-4 L 14,-4 L 18,24 Z" fill="var(--police-blue)" stroke="#111111" stroke-width="1.8" />
+              <polygon points="0,-1 5,3 4,9 0,11 -4,9 -5,3" fill="#F59E0B" />
+              <circle cx="-16" cy="0" r="4" fill="#FDE68A" stroke="#111111" stroke-width="1" />
+              <rect x="-14" y="-3" width="7" height="3" fill="#D1D5DB" />
+              <circle cx="0" cy="-14" r="13" fill="#FDE68A" stroke="#111111" stroke-width="1.5" />
+              <path d="M -14,-17 Q 0,-30 14,-17 Z" fill="var(--police-blue)" stroke="#111111" stroke-width="1.5" />
+              <path d="M -16,-17 L 16,-17" stroke="#111111" stroke-width="3" stroke-linecap="round" />
+              <g transform="translate(14, 0) rotate(135)">
+                <rect x="0" y="-5" width="22" height="10" rx="3" fill="var(--police-blue)" stroke="#111111" stroke-width="1.5" />
+                <circle cx="25" cy="0" r="4.5" fill="#FDE68A" stroke="#111111" stroke-width="1" />
+                <rect x="25" y="-2" width="16" height="4" rx="2" fill="#FDE68A" stroke="#111111" stroke-width="1" />
+              </g>
+            </g>
+            <text x="72" y="126" class="tile-text-title" font-size="16" fill="var(--go-red)" letter-spacing="3">JAIL</text>
+          </g>
+        </g>
+
+        <!-- ============================================================== -->
+        <!-- RIGHT TRACK: SPACES 31 TO 39 (UPRIGHT HORIZONTAL READABLE)    -->
+        <!-- ============================================================== -->
+        <g id="right-track">
+          <!-- Space 31: Pacific Avenue -->
+          <g id="tile-pacific" class="property-tile" transform="translate(955, 145)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="28" height="90" fill="var(--color-green)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="86" y="32" class="tile-text-title" font-size="9.5">PACIFIC</text>
+            <text x="86" y="46" class="tile-text-title" font-size="9.5">AVENUE</text>
+            <text x="86" y="74" class="tile-text-price" font-size="11">PRICE $300</text>
+          </g>
+
+          <!-- Space 32: North Carolina Avenue -->
+          <g id="tile-north-carolina" class="property-tile" transform="translate(955, 235)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="28" height="90" fill="var(--color-green)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="86" y="32" class="tile-text-title" font-size="8">NORTH CAROLINA</text>
+            <text x="86" y="46" class="tile-text-title" font-size="8">AVENUE</text>
+            <text x="86" y="74" class="tile-text-price" font-size="11">PRICE $300</text>
+          </g>
+
+          <!-- Space 33: Community Chest -->
+          <g id="tile-community-right" class="property-tile" transform="translate(955, 325)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="86" y="24" class="tile-text-title" font-size="8.5">COMMUNITY CHEST</text>
+            <g transform="translate(86, 46) scale(0.9)">
+              <use href="#icon-community-chest" />
+            </g>
+            <text x="86" y="76" class="tile-text-title" font-size="7" fill="var(--text-sub)">TOP CARD</text>
+          </g>
+
+          <!-- Space 34: Pennsylvania Avenue -->
+          <g id="tile-penn-ave" class="property-tile" transform="translate(955, 415)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="28" height="90" fill="var(--color-green)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="86" y="32" class="tile-text-title" font-size="8.5">PENNSYLVANIA</text>
+            <text x="86" y="46" class="tile-text-title" font-size="8.5">AVENUE</text>
+            <text x="86" y="74" class="tile-text-price" font-size="11">PRICE $320</text>
+          </g>
+
+          <!-- Space 35: Short Line Railroad -->
+          <g id="tile-short-line" class="railroad-tile" transform="translate(955, 505)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="28" height="90" fill="#334155" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="86" y="22" class="tile-text-title" font-size="8.5">SHORT LINE RR</text>
+            <g transform="translate(86, 44) scale(0.85)">
+              <use href="#icon-steam-locomotive" />
+            </g>
+            <text x="86" y="76" class="tile-text-price" font-size="11">PRICE $200</text>
+          </g>
+
+          <!-- Space 36: Chance (Red ?) -->
+          <g id="tile-chance-right" class="property-tile" transform="translate(955, 595)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="86" y="24" class="tile-text-title" font-size="10" fill="var(--chance-red)">CHANCE</text>
+            <g transform="translate(86, 52) scale(0.8)">
+              <use href="#icon-chance-red" />
+            </g>
+          </g>
+
+          <!-- Space 37: Park Place -->
+          <g id="tile-park-place" class="property-tile" transform="translate(955, 685)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="28" height="90" fill="var(--color-darkblue)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="86" y="32" class="tile-text-title" font-size="9.5">PARK</text>
+            <text x="86" y="46" class="tile-text-title" font-size="9.5">PLACE</text>
+            <text x="86" y="74" class="tile-text-price" font-size="11">PRICE $350</text>
+          </g>
+
+          <!-- Space 38: Luxury Tax -->
+          <g id="tile-luxury-tax" class="property-tile" transform="translate(955, 775)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <text x="86" y="22" class="tile-text-title" font-size="8.5">LUXURY TAX</text>
+            <g transform="translate(86, 46) scale(0.85)">
+              <use href="#icon-diamond-ring" />
+            </g>
+            <text x="86" y="76" class="tile-text-price" font-size="10.5">PAY $75.00</text>
+          </g>
+
+          <!-- Space 39: Boardwalk -->
+          <g id="tile-boardwalk" class="property-tile" transform="translate(955, 865)">
+            <rect x="0" y="0" width="145" height="90" fill="var(--tile-bg)" stroke="var(--tile-stroke)" stroke-width="1.5" />
+            <rect x="0" y="0" width="28" height="90" fill="var(--color-darkblue)" stroke="var(--tile-stroke)" stroke-width="1" />
+            <text x="86" y="38" class="tile-text-title" font-size="11">BOARDWALK</text>
+            <text x="86" y="74" class="tile-text-price" font-size="11">PRICE $400</text>
+          </g>
+        </g>
+
+        <!-- Live Player Token Disc -->
+        <g id="live-player-token" style="transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); transform: translate(1025px, 1025px);">
+          <use href="#token-player-2d" />
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Minimal Floating HUD Controls -->
+  <div style="position: fixed; top: 16px; right: 20px; z-index: 9999; display: flex; gap: 8px;">
+    <button onclick="toggleTheme()" style="background: #1E293B; color: #FFF; border: 1px solid #475569; padding: 6px 14px; border-radius: 9999px; font-family: 'Montserrat', sans-serif; font-size: 12px; cursor: pointer;">
+      <span id="theme-btn-label">🌙 Switch to 2D Dark</span>
+    </button>
+  </div>
+
+  <script>
+    // Smooth 2D Dice Roll & Move Token Simulation in Upright Screen Mode
+    let playerPosition = 0;
+    const tileCoords = [
+      { x: 1025, y: 1025 }, // 0: GO
+      { x: 910, y: 1040 },  // 1: Mediterranean
+      { x: 820, y: 1040 },  // 2: CC
+      { x: 730, y: 1040 },  // 3: Baltic
+      { x: 640, y: 1040 },  // 4: Income Tax
+      { x: 550, y: 1040 },  // 5: Reading RR
+      { x: 460, y: 1040 },  // 6: Oriental
+      { x: 370, y: 1040 },  // 7: Chance
+      { x: 280, y: 1040 },  // 8: Vermont
+      { x: 190, y: 1040 },  // 9: Conn
+      { x: 72, y: 1025 },   // 10: Jail
+      { x: 58, y: 910 },    // 11: St. Charles
+      { x: 58, y: 820 },    // 12: Electric
+      { x: 58, y: 730 },    // 13: States
+      { x: 58, y: 640 },    // 14: Virginia
+      { x: 58, y: 550 },    // 15: Penn RR
+      { x: 58, y: 460 },    // 16: St. James
+      { x: 58, y: 370 },    // 17: CC
+      { x: 58, y: 280 },    // 18: Tennessee
+      { x: 58, y: 190 },    // 19: New York
+      { x: 72, y: 72 },     // 20: Free Parking
+      { x: 190, y: 60 },    // 21: Kentucky
+      { x: 280, y: 60 },    // 22: Chance
+      { x: 370, y: 60 },    // 23: Indiana
+      { x: 460, y: 60 },    // 24: Illinois
+      { x: 550, y: 60 },    // 25: B&O RR
+      { x: 640, y: 60 },    // 26: Atlantic
+      { x: 730, y: 60 },    // 27: Ventnor
+      { x: 820, y: 60 },    // 28: Water Works
+      { x: 910, y: 60 },    // 29: Marvin Gardens
+      { x: 1025, y: 72 },   // 30: Go to Jail
+      { x: 1041, y: 190 },  // 31: Pacific
+      { x: 1041, y: 280 },  // 32: North Carolina
+      { x: 1041, y: 370 },  // 33: CC
+      { x: 1041, y: 460 },  // 34: Penn Ave
+      { x: 1041, y: 550 },  // 35: Short Line
+      { x: 1041, y: 640 },  // 36: Chance
+      { x: 1041, y: 730 },  // 37: Park Place
+      { x: 1041, y: 820 },  // 38: Luxury Tax
+      { x: 1041, y: 910 }   // 39: Boardwalk
+    ];
+
+    const dicePipMap = {
+      1: [[2, 2]],
+      2: [[1, 1], [3, 3]],
+      3: [[1, 1], [2, 2], [3, 3]],
+      4: [[1, 1], [1, 3], [3, 1], [3, 3]],
+      5: [[1, 1], [1, 3], [2, 2], [3, 1], [3, 3]],
+      6: [[1, 1], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3]]
+    };
+
+    function renderDie(elemId, val) {
+      const el = document.getElementById(elemId);
+      el.innerHTML = '';
+      const pips = dicePipMap[val] || dicePipMap[1];
+      pips.forEach(([r, c]) => {
+        const d = document.createElement('div');
+        d.className = 'dice-pip';
+        d.style.gridArea = `${r} / ${c}`;
+        el.appendChild(d);
+      });
+    }
+
+    function roll2DDice() {
+      const d1 = Math.floor(Math.random() * 6) + 1;
+      const d2 = Math.floor(Math.random() * 6) + 1;
+      renderDie('die-1', d1);
+      renderDie('die-2', d2);
+
+      const total = d1 + d2;
+      playerPosition = (playerPosition + total) % 40;
+      const target = tileCoords[playerPosition];
+
+      const token = document.getElementById('live-player-token');
+      if (token) {
+        token.style.transform = `translate(${target.x}px, ${target.y}px)`;
+      }
+    }
+
+    function toggleTheme() {
+      const isDark = document.body.classList.toggle('dark-mode');
+      const label = document.getElementById('theme-btn-label');
+      label.innerText = isDark ? '☀️ Switch to Classic 1:1' : '🌙 Switch to 2D Dark';
+    }
+  </script>
+</body>
+</html>

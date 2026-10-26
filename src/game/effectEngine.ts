@@ -11,6 +11,8 @@ export interface PlayerState {
   hasShield: boolean;
   skipNextTurn: boolean;
   userId?: string;
+  isBankrupt?: boolean;
+  isEliminated?: boolean;
   // إحصائيات الجلسة لتغذية "ذاكرة الشلة" وألقاب النهاية (Wrapped)
   stats: {
     coinsStolen: number;
@@ -31,6 +33,7 @@ export interface GameRoomState {
     penaltyValue: number;
     votes: Record<string, string>; // voterId -> targetPlayerId
   };
+  winCondition?: string;
 }
 
 // 3. سياق التنفيذ (من سحب البطاقة؟ ومن اختار كهدف من شاشة جواله؟)
@@ -238,24 +241,51 @@ export function executeCardEffects(
           const oldPos = target.position;
           const rawNewPos = oldPos + effect.value;
 
-          target.position =
-            ((rawNewPos % state.boardSize) + state.boardSize) % state.boardSize;
+          if (state.winCondition === "FIRST_TO_FINISH") {
+            const maxPos = state.boardSize - 1;
+            let bounced = false;
+            if (rawNewPos === maxPos) {
+              target.position = maxPos;
+            } else if (rawNewPos > maxPos) {
+              // Exact roll required to land on 100 (or bounce back if roll exceeds 100)
+              bounced = true;
+              const excess = rawNewPos - maxPos;
+              target.position = Math.max(0, maxPos - excess);
+            } else {
+              target.position = Math.max(0, rawNewPos);
+            }
 
-          const passedStart = effect.value > 0 && rawNewPos >= state.boardSize;
-          if (passedStart) {
-            target.coins += state.passStartBonus;
-          }
-
-          eventsLog.push({
-            type: "MOVE",
-            sourceId: sourcePlayer.id,
-            targetIds: [target.id],
-            value: effect.value,
-            messageAr:
-              effect.value >= 0
+            eventsLog.push({
+              type: "MOVE",
+              sourceId: sourcePlayer.id,
+              targetIds: [target.id],
+              value: effect.value,
+              messageAr: bounced
+                ? `تجاوز ${target.name} خط النهاية برمي ${effect.value} وارتد إلى المربع #${target.position + 1}!`
+                : effect.value >= 0
                 ? `تقدم ${target.name} ${effect.value} خطوات للأمام.`
                 : `تراجع ${target.name} ${Math.abs(effect.value)} خطوات للخلف!`
-          });
+            });
+          } else {
+            target.position =
+              ((rawNewPos % state.boardSize) + state.boardSize) % state.boardSize;
+
+            const passedStart = effect.value > 0 && rawNewPos >= state.boardSize;
+            if (passedStart) {
+              target.coins += state.passStartBonus;
+            }
+
+            eventsLog.push({
+              type: "MOVE",
+              sourceId: sourcePlayer.id,
+              targetIds: [target.id],
+              value: effect.value,
+              messageAr:
+                effect.value >= 0
+                  ? `تقدم ${target.name} ${effect.value} خطوات للأمام.`
+                  : `تراجع ${target.name} ${Math.abs(effect.value)} خطوات للخلف!`
+            });
+          }
           break;
         }
 

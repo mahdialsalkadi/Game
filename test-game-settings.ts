@@ -99,13 +99,14 @@ async function runTests() {
     assert(false, `Game started rejection test failed: ${e.message}`);
   }
 
-  // Test 5: Game ends at custom maxRounds
+  // Test 5: Game continues naturally past maxRounds and only ends upon authentic victory
   try {
     const machine = new BoardGameRoomMachine("test_settings_4", () => {}, { maxRounds: 3 });
     machine.joinPlayer("p1", "زيد", "#EF4444");
     machine.joinPlayer("p2", "عمرو", "#3B82F6");
 
     const pack = getDefaultSessionPack(["زيد", "عمرو"]);
+    pack.winCondition = "FIRST_TO_FINISH";
     machine.startGameWithAIPack(pack);
 
     // Fast-forward rounds to round 3
@@ -115,9 +116,14 @@ async function runTests() {
     // Trigger roll dice which advances turn
     machine.rollDiceAndMove("p2");
 
-    assert(machine.state.phase === "GAME_OVER", "Game reaches GAME_OVER after exceeding custom maxRounds (3)");
+    assert(machine.state.phase !== "GAME_OVER", "Game does NOT artificially terminate on round limit (3)");
+
+    // Authentic victory: p1 reaches finish tile
+    machine.state.players["p1"].position = machine.state.boardSize - 1;
+    machine.advanceTurn();
+    assert(machine.state.phase === "GAME_OVER", "Game reaches GAME_OVER upon authentic victory condition (FIRST_TO_FINISH)");
   } catch (e: any) {
-    assert(false, `Max rounds game end test failed: ${e.message}`);
+    assert(false, `Authentic victory test failed: ${e.message}`);
   }
 
   console.log(`\n================================`);

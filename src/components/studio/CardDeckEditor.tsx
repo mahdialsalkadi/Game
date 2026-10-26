@@ -300,7 +300,7 @@ export default function CardDeckEditor({
               className={`rounded-2xl border p-4 transition-all flex flex-col justify-between min-h-[220px] relative group ${
                 isSelected
                   ? `bg-slate-800/95 border-purple-400 ring-2 ring-purple-500/40 shadow-xl shadow-purple-500/10`
-                  : `bg-slate-900/80 ${cfg.border} hover:bg-slate-850 hover:shadow-lg`
+                  : `bg-slate-900/80 ${cfg.border} hover:bg-slate-800 hover:shadow-lg`
               }`}
             >
               {/* Card Header */}
